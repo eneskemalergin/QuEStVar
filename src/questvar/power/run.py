@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from questvar._api import QuestVar
 from questvar._config import PowerConfig
 from questvar.power._simulate import simulate_data
 
@@ -112,7 +113,6 @@ def _simulate_design_point(args: tuple) -> list[dict]:
     once per design point rather than once per iteration, and the multiprocessing
     pool carries one task per design point instead of one per (design_point, iteration).
     """
-    from questvar._api import QuestVar
 
     point, config_dict = args
     cfg = PowerConfig.from_dict(config_dict)
@@ -160,13 +160,14 @@ def _simulate_design_point(args: tuple) -> list[dict]:
         n_equiv = int(np.sum(status_full == 1))
         n_diff = int(np.sum(status_full == -1))
         n_ns = int(np.sum(status_full == 0))
-        # SEI = sensitivity for equivalent proteins (all proteins are equivalent here)
-        sei = n_equiv / n_equivalent_true
+        # SEI and false_diff_rate are based on tested proteins only (CV-filtered denominator).
+        # Excluded proteins cannot be assessed, so they should not penalise the score.
+        sei = n_equiv / n_tested if n_tested > 0 else 0.0
         equiv_rate = n_equiv / n_total
         ns_rate = n_ns / n_total
         diff_rate = n_diff / n_total
-        # false_diff_rate: proportion of truly-equivalent proteins incorrectly called differential
-        false_diff_rate = n_diff / n_equivalent_true
+        # false_diff_rate: proportion of tested (truly-equivalent) proteins incorrectly called differential
+        false_diff_rate = n_diff / n_tested if n_tested > 0 else 0.0
 
         metrics.append(
             {
@@ -304,6 +305,16 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
         )
         excluded_rates = np.array([row["excluded_rate"] for row in rows], dtype=np.float64)
         sei_mean = float(np.mean(sei_values))
+        # Power per iteration: continuous score capped at 1.
+        # Matches the reference calculate_power(simulated_sei, target_sei) formula:
+        #   power_i = min(1, 1 - max(0, target_sei - sei_i))
+        # Gives 1.0 when sei >= target_sei; decreases linearly below it.
+        target_sei = first["target_sei"]
+        power_values = np.array(
+            [min(1.0, 1.0 - max(0.0, target_sei - s)) for s in sei_values],
+            dtype=np.float64,
+        )
+        power_mean = float(np.mean(power_values))
         design_grid.append(
             {
                 "parameter": first["parameter"],
@@ -323,14 +334,14 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
                 "sei_q50": float(np.quantile(sei_values, 0.50)),
                 "sei_q95": float(np.quantile(sei_values, 0.95)),
                 "sei_ceiling": 1.0 - float(first["cv_mean"]),
-                "power": sei_mean,
-                "power_se": float(np.std(sei_values, ddof=0) / np.sqrt(len(rows))),
+                "power": power_mean,
+                "power_se": float(np.std(power_values, ddof=0) / np.sqrt(len(rows))),
                 "equiv_rate": float(np.mean(equiv_rates)),
                 "ns_rate": float(np.mean(ns_rates)),
                 "diff_rate": float(np.mean(diff_rates)),
                 "excluded_rate": float(np.mean(excluded_rates)),
                 "false_diff_rate": _nanmean_or_nan(false_diff_rates),
-                "feasible": sei_mean >= config.target_power,
+                "feasible": power_mean >= config.target_power,
             }
         )
 
