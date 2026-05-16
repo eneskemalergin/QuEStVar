@@ -110,7 +110,8 @@ def _ttest_ind(
             den = (v1 / n1) ** 2 / (n1 - 1.0) + (v2 / n2) ** 2 / (n2 - 1.0)
             df = np.where(den > 0, num / den, 1.0)
 
-        t_stat = np.where(se > 0, (m1 - m2) / se, 0.0)
+        same = m1 == m2
+        t_stat = np.where(same, 0.0, (m1 - m2) / se)
     p_val = _pvalue_from_t(t_stat, df, alternative)
     return t_stat, p_val, df
 
@@ -270,7 +271,8 @@ def _ttest_ind_from_rel(
     mean = np.nanmean(d, axis=1)
     var = np.nanvar(d, axis=1, ddof=1)
     se = np.sqrt(var / n)
-    t_stat = np.where(se > 0, mean / se, 0.0)
+    same = mean == 0
+    t_stat = np.where(same, 0.0, mean / se)
     df = n - 1.0
     p_val = _pvalue_from_t(t_stat, df, alternative)
     return t_stat, p_val, df

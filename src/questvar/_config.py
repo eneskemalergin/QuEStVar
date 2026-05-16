@@ -5,8 +5,10 @@ from dataclasses import dataclass, replace
 VALID_CORRECTIONS: set[str | None] = {
     "bonferroni",
     "holm",
+    "hochberg",
     "fdr",
     "fdr_bh",
+    "BY",
     "qvalue",
     None,
 }
