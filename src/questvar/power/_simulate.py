@@ -28,8 +28,7 @@ def simulate_data(
     mean_dist = mean_dist[:, np.newaxis]
 
     cv_dist = np.random.gamma(cv_k, cv_theta, n_prts)
-    cv_dist = cv_dist * cv_mu / np.mean(cv_dist)
-    cv_dist = cv_dist - np.min(cv_dist) + 1.0
+    cv_dist = cv_dist * cv_mu / np.mean(cv_dist)  # scale so mean CV == cv_mu
     cv_dist = cv_dist[:, np.newaxis]
 
     if np.any(mean_dist == 0):

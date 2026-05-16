@@ -21,7 +21,7 @@ def _make_proteomics_data(n_prts=100, n_reps=3):
 class TestQuestVar:
     def test_init_defaults(self):
         qv = QuestVar()
-        assert qv.config.cv_thr == 0.15
+        assert qv.config.cv_thr == 1.0
 
     def test_init_with_kwargs(self):
         qv = QuestVar(cv_thr=0.2, p_thr=0.01)
@@ -178,5 +178,5 @@ class TestValidateExtract:
         qv = QuestVar()
         import pytest
 
-        with pytest.raises(ValueError, match="cv_thr must be in"):
-            qv.test(data, cond_1=[0, 1, 2], cond_2=[3, 4, 5], cv_thr=1.5)
+        with pytest.raises(ValueError, match="cv_thr must be"):
+            qv.test(data, cond_1=[0, 1, 2], cond_2=[3, 4, 5], cv_thr=0.0)

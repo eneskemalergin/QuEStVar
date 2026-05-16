@@ -61,7 +61,7 @@ class _ConfigMixin:
 @dataclass(frozen=True)
 class TestConfig(_ConfigMixin):
     __test__ = False
-    cv_thr: float = 0.15
+    cv_thr: float = 1.0
     p_thr: float = 0.05
     df_thr: float = 1.0
     eq_thr: float = 0.5
@@ -74,8 +74,8 @@ class TestConfig(_ConfigMixin):
     def __post_init__(self) -> None:
         if self.df_thr <= self.eq_thr:
             raise ValueError(f"df_thr ({self.df_thr}) must be > eq_thr ({self.eq_thr})")
-        if not 0 < self.cv_thr < 1:
-            raise ValueError(f"cv_thr must be in (0, 1), got {self.cv_thr}")
+        if self.cv_thr <= 0:
+            raise ValueError(f"cv_thr must be > 0, got {self.cv_thr}")
         if self.correction not in VALID_CORRECTIONS:
             raise ValueError(
                 f"Unknown correction: {self.correction}. Valid: {VALID_CORRECTIONS}"
@@ -95,7 +95,7 @@ class PowerConfig(_ConfigMixin):
     eq_thr: float = 0.5
     p_thr: float = 0.05
     df_thr: float = 1.0
-    cv_thr: float = 0.15
+    cv_thr: float = 1.0
     correction: str | None = "fdr"
     int_mu: float = 18.0
     int_sd: float = 1.0
@@ -105,7 +105,7 @@ class PowerConfig(_ConfigMixin):
     eq_boundaries: tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)
     n_reps_grid: tuple[int, ...] = (3, 5, 10, 20)
     cv_mean_grid: tuple[float, ...] = (0.15, 0.275, 0.40)
-    cv_thr_grid: tuple[float, ...] = (0.05, 0.1, 0.15, 0.2, 0.3)
+    cv_thr_grid: tuple[float, ...] = (0.5, 1.0, 1.5)
     effect_size_grid: tuple[float, ...] = field(
         default_factory=lambda: (-2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0)
     )
@@ -126,8 +126,8 @@ class PowerConfig(_ConfigMixin):
             raise ValueError(
                 "mode must be one of {'pure_equivalence', 'calibration', 'optimal_design'}"
             )
-        if not 0 < self.cv_thr < 1:
-            raise ValueError(f"cv_thr must be in (0, 1), got {self.cv_thr}")
+        if self.cv_thr <= 0:
+            raise ValueError(f"cv_thr must be > 0, got {self.cv_thr}")
         if self.n_prts < 1:
             raise ValueError(f"n_prts must be >= 1, got {self.n_prts}")
         if self.n_reps < 2:
@@ -189,8 +189,8 @@ class PowerConfig(_ConfigMixin):
             raise ValueError("n_reps_grid values must be >= 2")
         if any(cv <= 0 for cv in self.cv_mean_grid):
             raise ValueError("cv_mean_grid values must be > 0")
-        if any(not 0 < cv_thr < 1 for cv_thr in self.cv_thr_grid):
-            raise ValueError("cv_thr_grid values must be in (0, 1)")
+        if any(cv_thr <= 0 for cv_thr in self.cv_thr_grid):
+            raise ValueError("cv_thr_grid values must be > 0")
 
         if self.constraint_false_equiv_max is not None and not 0 <= self.constraint_false_equiv_max <= 1:
             raise ValueError("constraint_false_equiv_max must be in [0, 1]")

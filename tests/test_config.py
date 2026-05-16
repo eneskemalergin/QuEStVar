@@ -10,7 +10,7 @@ from questvar._config import VALID_CORRECTIONS, PowerConfig, TestConfig
 class TestTestConfig:
     def test_defaults(self):
         cfg = TestConfig()
-        assert cfg.cv_thr == 0.15
+        assert cfg.cv_thr == 1.0
         assert cfg.p_thr == 0.05
         assert cfg.df_thr == 1.0
         assert cfg.eq_thr == 0.5
@@ -27,13 +27,13 @@ class TestTestConfig:
             TestConfig(df_thr=1.0, eq_thr=1.0)
 
     def test_cv_thr_range(self):
-        with pytest.raises(ValueError, match="cv_thr must be in"):
+        with pytest.raises(ValueError, match="cv_thr must be"):
             TestConfig(cv_thr=0.0)
-        with pytest.raises(ValueError, match="cv_thr must be in"):
-            TestConfig(cv_thr=1.0)
-        with pytest.raises(ValueError, match="cv_thr must be in"):
+        with pytest.raises(ValueError, match="cv_thr must be"):
             TestConfig(cv_thr=-0.1)
         TestConfig(cv_thr=0.01)
+        TestConfig(cv_thr=1.0)
+        TestConfig(cv_thr=1.5)
 
     def test_unknown_correction(self):
         with pytest.raises(ValueError, match="Unknown correction"):

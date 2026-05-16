@@ -35,7 +35,7 @@ def run_power_analysis(
     target_power: float = 0.8,
     p_thr: float = 0.05,
     df_thr: float = 1.0,
-    cv_thr: float = 0.15,
+    cv_thr: float = 1.0,
     correction: str | None = "fdr",
     int_mu: float = 18.0,
     int_sd: float = 1.0,

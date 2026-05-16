@@ -75,8 +75,8 @@ def _from_array(
     if max(idx1 + idx2) >= arr.shape[1]:
         raise ValueError("Column index out of range")
 
-    if not 0 < cv_thr < 1:
-        raise ValueError(f"cv_thr must be in (0, 1), got {cv_thr}")
+    if cv_thr <= 0:
+        raise ValueError(f"cv_thr must be > 0, got {cv_thr}")
 
     s1 = arr[:, idx1].copy()
     s2 = arr[:, idx2].copy()
@@ -115,8 +115,8 @@ def _from_polars(
     if len(cond_2) < 2:
         raise ValueError("cond_2 must have at least 2 replicates")
 
-    if not 0 < cv_thr < 1:
-        raise ValueError(f"cv_thr must be in (0, 1), got {cv_thr}")
+    if cv_thr <= 0:
+        raise ValueError(f"cv_thr must be > 0, got {cv_thr}")
 
     protein_ids = data.select("protein_id").to_series().to_numpy()
     s1_arr = data.select(cond_1).to_numpy().astype(np.float64)
