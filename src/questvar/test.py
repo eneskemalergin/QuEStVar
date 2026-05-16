@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+import numpy as np
+import polars as pl
+
+from questvar._api import QuestVar, TestResults
+
+
+def test(
+    data: pl.DataFrame | np.ndarray,
+    cond_1: list[str] | list[int],
+    cond_2: list[str] | list[int],
+    **kwargs,
+) -> TestResults:
+    """Quick one-off equivalence test without instantiating QuestVar.
+
+    Parameters
+    ----------
+    data : pl.DataFrame or np.ndarray
+        Input data.
+    cond_1, cond_2 : list of str or list of int
+        Column names or indices for each condition.
+    **kwargs
+        Passed to TestConfig (cv_thr, p_thr, df_thr, eq_thr, ...).
+
+    Returns
+    -------
+    TestResults
+    """
+    return QuestVar(**kwargs).test(data, cond_1, cond_2)

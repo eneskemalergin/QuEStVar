@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+import numpy as np
+from numpy.typing import NDArray
+
+
+def validate_and_extract(
+    data: object,
+    cond_1: list[str] | list[int],
+    cond_2: list[str] | list[int],
+    is_log2: bool = False,
+    cv_thr: float = 0.15,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], np.ndarray, list, list, dict]:
+    """Validate input data and extract condition arrays.
+
+    Parameters
+    ----------
+    data : pl.DataFrame or np.ndarray
+        Input data. Polars DataFrame with sample columns, or numpy array
+        where columns are in [cond_1..., cond_2...] order.
+    cond_1, cond_2 : list of str or list of int
+        Column names (for DataFrame) or indices (for ndarray) for each
+        condition. Each must have at least 2 elements.
+    is_log2 : bool
+        Whether data is already log2-transformed.
+    cv_thr : float
+        CV threshold for filtering (must be in (0, 1)).
+
+    Returns
+    -------
+    s1_arr, s2_arr : ndarray
+        Intensity arrays, shape (n_proteins, n_replicates).
+    protein_ids : ndarray
+        Protein identifiers (or range(n_proteins) for ndarray input).
+    cond_1_names, cond_2_names : list
+        Resolved column names.
+    meta : dict
+        Extra metadata (empty for now, reserved for future use).
+    """
+    if isinstance(data, np.ndarray):
+        return _from_array(data, cond_1, cond_2, cv_thr)
+
+    try:
+        import polars as pl
+    except ImportError:
+        raise ImportError("Polars is required for DataFrame input") from None
+
+    if isinstance(data, pl.DataFrame):
+        return _from_polars(data, cond_1, cond_2, is_log2, cv_thr)
+
+    raise TypeError(f"Expected pl.DataFrame or np.ndarray, got {type(data).__name__}")
+
+
+def _from_array(
+    data: np.ndarray,
+    cond_1: list[int] | list[str],
+    cond_2: list[int] | list[str],
+    cv_thr: float,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], np.ndarray, list, list, dict]:
+    arr = np.asarray(data, dtype=np.float64)
+    if arr.ndim != 2:
+        raise ValueError(f"Expected 2D array, got {arr.ndim}D")
+
+    if not isinstance(cond_1[0], int):
+        raise TypeError("cond_1 and cond_2 must be integer indices for ndarray input")
+
+    idx1 = [int(c) for c in cond_1]
+    idx2 = [int(c) for c in cond_2]
+
+    if len(idx1) < 2:
+        raise ValueError("cond_1 must have at least 2 replicates")
+    if len(idx2) < 2:
+        raise ValueError("cond_2 must have at least 2 replicates")
+
+    if max(idx1 + idx2) >= arr.shape[1]:
+        raise ValueError("Column index out of range")
+
+    if not 0 < cv_thr < 1:
+        raise ValueError(f"cv_thr must be in (0, 1), got {cv_thr}")
+
+    s1 = arr[:, idx1].copy()
+    s2 = arr[:, idx2].copy()
+
+    if np.all(np.isnan(s1), axis=1).any():
+        raise ValueError("Some proteins have all NaN in cond_1")
+    if np.all(np.isnan(s2), axis=1).any():
+        raise ValueError("Some proteins have all NaN in cond_2")
+
+    protein_ids = np.arange(arr.shape[0], dtype=np.int64)
+    return s1, s2, protein_ids, list(cond_1), list(cond_2), {}
+
+
+def _from_polars(
+    data: object,
+    cond_1: list[str] | list[int],
+    cond_2: list[str] | list[int],
+    is_log2: bool,  # noqa: ARG001
+    cv_thr: float,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], np.ndarray, list, list, dict]:
+
+    if not isinstance(cond_1[0], str):
+        raise TypeError("cond_1 and cond_2 must be column names for DataFrame input")
+
+    cols = data.columns
+
+    for c in cond_1 + cond_2:
+        if c not in cols:
+            raise ValueError(f"Column '{c}' not found in DataFrame")
+
+    if len(set(cond_1) & set(cond_2)):
+        raise ValueError("cond_1 and cond_2 must not share columns")
+
+    if len(cond_1) < 2:
+        raise ValueError("cond_1 must have at least 2 replicates")
+    if len(cond_2) < 2:
+        raise ValueError("cond_2 must have at least 2 replicates")
+
+    if not 0 < cv_thr < 1:
+        raise ValueError(f"cv_thr must be in (0, 1), got {cv_thr}")
+
+    protein_ids = data.select("protein_id").to_series().to_numpy()
+    s1_arr = data.select(cond_1).to_numpy().astype(np.float64)
+    s2_arr = data.select(cond_2).to_numpy().astype(np.float64)
+
+    if np.all(np.isnan(s1_arr), axis=1).any():
+        raise ValueError("Some proteins have all NaN in cond_1")
+    if np.all(np.isnan(s2_arr), axis=1).any():
+        raise ValueError("Some proteins have all NaN in cond_2")
+
+    return s1_arr, s2_arr, protein_ids, list(cond_1), list(cond_2), {}

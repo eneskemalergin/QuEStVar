@@ -34,27 +34,48 @@ def run_power_analysis(
         cv_mean_list = [15, 27.5, 40]
 
     meta = dict(
-        n_prts=n_prts, p_thr=p_thr, df_thr=df_thr, cv_thr=cv_thr,
-        correction=correction, int_mu=int_mu, int_sd=int_sd,
-        cv_k=cv_k, cv_theta=cv_theta,
+        n_prts=n_prts,
+        p_thr=p_thr,
+        df_thr=df_thr,
+        cv_thr=cv_thr,
+        correction=correction,
+        int_mu=int_mu,
+        int_sd=int_sd,
+        cv_k=cv_k,
+        cv_theta=cv_theta,
     )
 
     param_sets: list[dict] = []
     for eq_thr in eq_boundaries:
-        param_sets.append(dict(
-            parameter="eq_thr", value=eq_thr, n_reps=10,
-            eq_thr=eq_thr, cv_mean=27.5,
-        ))
+        param_sets.append(
+            dict(
+                parameter="eq_thr",
+                value=eq_thr,
+                n_reps=10,
+                eq_thr=eq_thr,
+                cv_mean=27.5,
+            )
+        )
     for n_reps in n_reps_list:
-        param_sets.append(dict(
-            parameter="n_reps", value=n_reps, n_reps=n_reps,
-            eq_thr=0.5, cv_mean=27.5,
-        ))
+        param_sets.append(
+            dict(
+                parameter="n_reps",
+                value=n_reps,
+                n_reps=n_reps,
+                eq_thr=0.5,
+                cv_mean=27.5,
+            )
+        )
     for cv_mean in cv_mean_list:
-        param_sets.append(dict(
-            parameter="cv_mean", value=cv_mean, n_reps=10,
-            eq_thr=0.5, cv_mean=cv_mean,
-        ))
+        param_sets.append(
+            dict(
+                parameter="cv_mean",
+                value=cv_mean,
+                n_reps=10,
+                eq_thr=0.5,
+                cv_mean=cv_mean,
+            )
+        )
 
     tasks = [(ps, i) for ps in param_sets for i in range(n_iterations)]
 
@@ -81,12 +102,18 @@ def run_power_analysis(
             continue
         avg_sei = entry["sum"] / entry["count"]
         power = max(0.0, min(1.0, 1.0 - max(0.0, target_power - avg_sei)))
-        output.append(dict(
-            parameter=ps["parameter"], value=ps["value"],
-            sei=avg_sei, power=power,
-            n_reps=ps["n_reps"], eq_thr=ps["eq_thr"], cv_mean=ps["cv_mean"],
-            **meta,
-        ))
+        output.append(
+            dict(
+                parameter=ps["parameter"],
+                value=ps["value"],
+                sei=avg_sei,
+                power=power,
+                n_reps=ps["n_reps"],
+                eq_thr=ps["eq_thr"],
+                cv_mean=ps["cv_mean"],
+                **meta,
+            )
+        )
     return output
 
 
@@ -116,7 +143,8 @@ def _simulate_one(task: tuple, meta: dict) -> float:
     s1 = np.log2(s1)
     s2 = np.log2(s2)
     result = run_unpaired(
-        s1, s2,
+        s1,
+        s2,
         eq_thr=ps["eq_thr"],
         df_thr=meta["df_thr"],
         p_thr=meta["p_thr"],
