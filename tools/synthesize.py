@@ -227,6 +227,98 @@ def make_all_configs() -> dict[str, SyntheticDataset]:
     return {name: make_balanced_dataset(cfg) for name, cfg in CONFIGS.items()}
 
 
+def make_paired_dataset(config: DataConfig | None = None, **kwargs) -> SyntheticDataset:
+    """
+    Generate a synthetic dataset for paired t-test comparison.
+
+    Each replicate j shares a sample-level random effect (δ_j) between
+    conditions, so the within-pair correlation is real and the paired test
+    will outperform the unpaired test on noisy data.
+
+    Structure in log2 space:
+        x1[i,j] = mu_i + delta_j + eps1[i,j]
+        x2[i,j] = mu_i + fc_i + delta_j + eps2[i,j]
+        diff[i,j] = fc_i + eps2[i,j] - eps1[i,j]
+
+    delta_j  ~ N(0, sigma_between)  -- shared sample effect
+    eps[i,j] ~ N(0, sigma_within)   -- independent technical noise
+
+    sigma_between is set to sigma_within (strong pairing) so a paired test
+    captures the cancellation and has much lower effective SE than unpaired.
+
+    Returns
+    -------
+    SyntheticDataset with the same layout as make_balanced_dataset.
+    Data is in raw (linear) space; use is_log2=False.
+    """
+    if config is None:
+        config = DataConfig(**kwargs)
+    elif kwargs:
+        import dataclasses
+        config = dataclasses.replace(config, **kwargs)
+
+    rng = np.random.default_rng(config.seed)
+    n_total = config.n_eq + config.n_df + config.n_ns
+
+    # Protein means in log2 space
+    mu_log2 = rng.normal(config.int_mu_log2, config.int_sd_log2, size=n_total)
+
+    # Per-protein FC
+    fc = np.concatenate([
+        np.full(config.n_eq, config.eq_fc),
+        np.full(config.n_df, config.df_fc),
+        np.full(config.n_ns, config.ns_fc),
+    ])
+
+    # Noise scale in log2 space from CV
+    sigma_within  = np.sqrt(np.log1p(config.cv ** 2)) / np.log(2.0)
+    sigma_between = sigma_within  # strong pairing: same magnitude
+
+    # Sample-level effects: shape (n_reps,)
+    delta = rng.normal(0, sigma_between, size=config.n_reps)
+
+    # Per-replicate technical noise: shape (n_total, n_reps)
+    eps1 = rng.normal(0, sigma_within, size=(n_total, config.n_reps))
+    eps2 = rng.normal(0, sigma_within, size=(n_total, config.n_reps))
+
+    # Build log2 arrays then convert to raw
+    x1_log2 = mu_log2[:, np.newaxis] + delta[np.newaxis, :] + eps1
+    x2_log2 = mu_log2[:, np.newaxis] + fc[:, np.newaxis] + delta[np.newaxis, :] + eps2
+
+    s1 = np.power(2.0, x1_log2)
+    s2 = np.power(2.0, x2_log2)
+
+    # Ground-truth status
+    truth = np.concatenate([
+        np.ones(config.n_eq,  dtype=np.int8),
+        np.full(config.n_df, -1, dtype=np.int8),
+        np.zeros(config.n_ns, dtype=np.int8),
+    ])
+
+    # Shuffle
+    order = rng.permutation(n_total)
+    s1, s2, truth = s1[order], s2[order], truth[order]
+
+    cond_1 = [f"c1_r{i+1}" for i in range(config.n_reps)]
+    cond_2 = [f"c2_r{i+1}" for i in range(config.n_reps)]
+    protein_ids = [f"P{i+1:05d}" for i in range(n_total)]
+
+    rows: dict[str, list] = {"protein_id": protein_ids}
+    for j, col in enumerate(cond_1):
+        rows[col] = s1[:, j].tolist()
+    for j, col in enumerate(cond_2):
+        rows[col] = s2[:, j].tolist()
+
+    return SyntheticDataset(
+        data=pl.DataFrame(rows),
+        cond_1=cond_1,
+        cond_2=cond_2,
+        truth=truth,
+        protein_ids=protein_ids,
+        config=config,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point (quick sanity print)
 # ---------------------------------------------------------------------------

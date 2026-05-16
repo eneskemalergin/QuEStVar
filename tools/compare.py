@@ -1,40 +1,50 @@
 """
-Regression and accuracy comparison: questvar package vs ref/tests.py scripts.
+Comprehensive comparison: questvar package vs ref/tests.py vs pure-scipy baseline.
 
-Checks:
-  1. Status accuracy vs synthetic ground truth (confusion matrix, F1)
-  2. Numeric agreement on shared columns (log2FC, p-values, adj-p)
-  3. Wall-clock speed (timeit)
-  4. Peak memory (tracemalloc)
+Backends tested
+---------------
+Unpaired (independent samples):
+  questvar_welch    -- questvar, var_equal=False  (Welch t-test throughout)
+  questvar_student  -- questvar, var_equal=True   (pooled variance throughout)
+  ref_welch         -- ref/tests.py, var_equal=False
+                       NOTE: ref hardcodes equal_var=True for TOST one-sided
+                       tests regardless of this flag (REF-DIFF-1, documented)
+  ref_student       -- ref/tests.py, var_equal=True
+  scipy_welch       -- pure scipy, Welch (ground-truth numeric reference)
+  scipy_student     -- pure scipy, pooled variance
 
-Known intentional differences (documented, not treated as bugs):
-  REF-DIFF-1  TOST variance:
-      ref/run_unpaired always uses equal_var=True for TOST one-sided tests
-      regardless of the equalVar argument; questvar uses Welch (equal_var=False)
-      throughout. This shifts eq_p values for proteins with unequal variances.
-  REF-DIFF-2  CV-filter logic:
-      ref requires both CV indicators = 1 (sum >= 2).
-      questvar keeps proteins where both indicators >= 0 (0=NaN-CV also kept).
-      For clean synthetic data these are equivalent.
-  REF-DIFF-3  Paired average:
-      ref computes nanmean over all replicates from both conditions combined;
-      questvar computes (mean_c1 + mean_c2) / 2. Differs only when NaNs present.
+Paired (matched replicates):
+  questvar_paired   -- questvar, is_paired=True
+  ref_paired        -- ref/tests.py, is_paired=True
+  scipy_paired      -- pure scipy paired
+
+Metrics reported per backend
+-----------------------------
+  * Per-class recall, precision, F1 vs synthetic ground truth
+  * Numeric agreement vs the matching scipy baseline (max |diff|, Pearson r)
+    for: log2fc, df_p, df_adjp, eq_p, eq_adjp
+  * Wall-clock time (mean of --repeat runs)
+  * Peak heap memory (tracemalloc, single run)
 
 Usage
 -----
-    uv run python tools/compare.py                  # default medium config
-    uv run python tools/compare.py --config large   # large preset
-    uv run python tools/compare.py --all-configs    # all presets
+    uv run python tools/compare.py                      # medium unpaired + paired
+    uv run python tools/compare.py --config large       # large preset
+    uv run python tools/compare.py --all-configs        # every preset
+    uv run python tools/compare.py --no-paired          # skip paired section
+    uv run python tools/compare.py --config large --repeat 1
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 import sys
 import time
 import tracemalloc
 import types
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -42,407 +52,468 @@ import numpy as np
 import polars as pl
 
 # ---------------------------------------------------------------------------
-# Path setup so we can import both questvar (installed) and ref/tests.py
+# Paths
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-REF_DIR = REPO_ROOT / "ref"
+REF_DIR   = REPO_ROOT / "ref"
 
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
+# ---------------------------------------------------------------------------
+# nbpy shim so ref/tests.py can `from nbpy import utils`
+# ---------------------------------------------------------------------------
 
 def _install_nbpy_shim() -> None:
-    """
-    Create a fake 'nbpy' package in sys.modules whose 'utils' attribute
-    is the actual ref/utils.py module.  This allows ref/tests.py to
-    `from nbpy import utils` without the package being installed.
-    """
     if "nbpy" in sys.modules:
         return
     spec = importlib.util.spec_from_file_location("nbpy.utils", REF_DIR / "utils.py")
-    ref_utils = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-    spec.loader.exec_module(ref_utils)  # type: ignore[union-attr]
-    nbpy_pkg = types.ModuleType("nbpy")
-    nbpy_pkg.utils = ref_utils  # type: ignore[attr-defined]
-    sys.modules["nbpy"] = nbpy_pkg
+    ref_utils = importlib.util.module_from_spec(spec)       # type: ignore[arg-type]
+    spec.loader.exec_module(ref_utils)                      # type: ignore[union-attr]
+    pkg = types.ModuleType("nbpy")
+    pkg.utils = ref_utils                                   # type: ignore[attr-defined]
+    sys.modules["nbpy"]       = pkg
     sys.modules["nbpy.utils"] = ref_utils
 
 
 def _import_ref_tests():
-    """Import ref/tests.py after shimming nbpy."""
     _install_nbpy_shim()
-    if str(REF_DIR) not in sys.path:
-        sys.path.insert(0, str(REF_DIR))
     if "ref_tests" not in sys.modules:
         spec = importlib.util.spec_from_file_location("ref_tests", REF_DIR / "tests.py")
-        mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        mod  = importlib.util.module_from_spec(spec)        # type: ignore[arg-type]
+        spec.loader.exec_module(mod)                        # type: ignore[union-attr]
         sys.modules["ref_tests"] = mod
     return sys.modules["ref_tests"]
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Normalised result container
 # ---------------------------------------------------------------------------
 
-def _confusion_matrix(
-    predicted: np.ndarray,
-    truth: np.ndarray,
-    labels: tuple[int, ...] = (1, -1, 0),
-) -> dict[str, Any]:
-    """Compute per-class precision, recall, F1, and overall accuracy."""
-    label_names = {1: "EQ", -1: "DF", 0: "NS"}
-    results: dict[str, Any] = {}
-    correct = (predicted == truth).sum()
-    results["accuracy"] = correct / len(truth)
+class BackendResult:
+    """Columns present in every backend output, in kept-protein order."""
 
-    for lbl in labels:
-        tp = int(((predicted == lbl) & (truth == lbl)).sum())
-        fp = int(((predicted == lbl) & (truth != lbl)).sum())
-        fn = int(((predicted != lbl) & (truth == lbl)).sum())
-        precision = tp / (tp + fp) if (tp + fp) > 0 else float("nan")
-        recall    = tp / (tp + fn) if (tp + fn) > 0 else float("nan")
-        f1 = (
-            2 * precision * recall / (precision + recall)
-            if (precision + recall) > 0
-            else float("nan")
-        )
-        name = label_names[lbl]
-        results[name] = {"TP": tp, "FP": fp, "FN": fn,
-                         "precision": precision, "recall": recall, "F1": f1}
-    return results
+    def __init__(
+        self,
+        *,
+        log2fc:  np.ndarray,
+        df_p:    np.ndarray,
+        df_adjp: np.ndarray,
+        eq_p:    np.ndarray,
+        eq_adjp: np.ndarray,
+        status:  np.ndarray,   # float64, len=n_total; NaN = filtered out
+        n_kept:  int,
+    ) -> None:
+        self.log2fc  = log2fc
+        self.df_p    = df_p
+        self.df_adjp = df_adjp
+        self.eq_p    = eq_p
+        self.eq_adjp = eq_adjp
+        self.status  = status
+        self.n_kept  = n_kept
+
+
+# ---------------------------------------------------------------------------
+# questvar backend
+# ---------------------------------------------------------------------------
+
+def _questvar(ds, *, eq_thr, df_thr, p_thr, var_equal, is_paired) -> BackendResult:
+    from questvar import QuestVar
+    qv = QuestVar(
+        eq_thr=eq_thr, df_thr=df_thr, p_thr=p_thr,
+        correction="fdr", is_log2=False,
+        var_equal=var_equal, is_paired=is_paired, cv_thr=0.15,
+    )
+    r = qv.test(ds.data, ds.cond_1, ds.cond_2)
+    status_full = r.info["status"].to_numpy().astype(np.float64)
+    d = r.data
+    return BackendResult(
+        log2fc  = d["log2fc"].to_numpy(),
+        df_p    = d["df_p"].to_numpy(),
+        df_adjp = d["df_adjp"].to_numpy(),
+        eq_p    = d["eq_p"].to_numpy(),
+        eq_adjp = d["eq_adjp"].to_numpy(),
+        status  = status_full,
+        n_kept  = int(np.isfinite(status_full).sum()),
+    )
+
+
+# ---------------------------------------------------------------------------
+# ref backend
+# ---------------------------------------------------------------------------
+
+def _ref(ds, *, eq_thr, df_thr, p_thr, var_equal, is_paired) -> BackendResult:
+    ref    = _import_ref_tests()
+    s1, s2 = ds.to_numpy()
+    res_df, info_df = ref.run_questvar(
+        S1_arr=s1, S2_arr=s2,
+        is_log2=False, cv_thr=0.15,
+        p_thr=p_thr, df_thr=df_thr, eq_thr=eq_thr,
+        var_equal=var_equal, is_paired=is_paired,
+        correction="fdr", allow_missing=False,
+    )
+    status_full = info_df["Status"].values.astype(np.float64)
+    return BackendResult(
+        log2fc  = res_df["log2FC"].values,
+        df_p    = res_df["df_p"].values,
+        df_adjp = res_df["df_adjp"].values,
+        eq_p    = res_df["eq_p"].values,
+        eq_adjp = res_df["eq_adjp"].values,
+        status  = status_full,
+        n_kept  = int(np.isfinite(status_full).sum()),
+    )
+
+
+# ---------------------------------------------------------------------------
+# scipy backend (ground-truth reference)
+# ---------------------------------------------------------------------------
+
+def _fdr_bh(p: np.ndarray) -> np.ndarray:
+    """BH FDR – identical algorithm to questvar._correction._fdr_bh."""
+    m     = len(p)
+    order = np.argsort(p)[::-1]
+    steps = m / np.arange(m, 0, -1)
+    q     = np.minimum(1.0, np.minimum.accumulate(steps * p[order]))
+    result = np.empty_like(p)
+    result[order] = q
+    return result
+
+
+def _scipy(ds, *, eq_thr, df_thr, p_thr, equal_var, paired) -> BackendResult:
+    """
+    Protein-by-protein scipy t-tests.  Slow but unambiguous ground truth.
+    CV filter, log2 transform, and BH correction are identical to questvar.
+    """
+    from scipy.stats import ttest_ind, ttest_rel
+
+    s1_raw, s2_raw = ds.to_numpy()
+
+    # CV filter (ratio, ddof=1) – matches questvar._cv.make_selection_indicator
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        cv1 = np.std(s1_raw, axis=1, ddof=1) / np.mean(s1_raw, axis=1)
+        cv2 = np.std(s2_raw, axis=1, ddof=1) / np.mean(s2_raw, axis=1)
+    ind1 = np.where(np.isnan(cv1), 0, np.where(cv1 <= 0.15, 1, -1))
+    ind2 = np.where(np.isnan(cv2), 0, np.where(cv2 <= 0.15, 1, -1))
+    keep = (ind1 >= 0) & (ind2 >= 0)
+
+    s1 = np.log2(np.maximum(s1_raw[keep], 1e-300))
+    s2 = np.log2(np.maximum(s2_raw[keep], 1e-300))
+    n  = s1.shape[0]
+
+    log2fc  = np.mean(s1, axis=1) - np.mean(s2, axis=1)
+    df_p    = np.empty(n)
+    eq_p_up = np.empty(n)
+    eq_p_lo = np.empty(n)
+
+    for i in range(n):
+        x1, x2 = s1[i], s2[i]
+        if paired:
+            _, df_p[i]    = ttest_rel(x1, x2, alternative="two-sided")
+            _, eq_p_up[i] = ttest_rel(x1 - eq_thr, x2, alternative="less")
+            _, eq_p_lo[i] = ttest_rel(x1 + eq_thr, x2, alternative="greater")
+        else:
+            _, df_p[i]    = ttest_ind(x1, x2, equal_var=equal_var,
+                                      alternative="two-sided")
+            _, eq_p_up[i] = ttest_ind(x1 - eq_thr, x2, equal_var=equal_var,
+                                      alternative="less")
+            _, eq_p_lo[i] = ttest_ind(x1 + eq_thr, x2, equal_var=equal_var,
+                                      alternative="greater")
+
+    # Clamp to [0, 1]
+    df_p    = np.clip(df_p,    0.0, 1.0)
+    eq_p_up = np.clip(eq_p_up, 0.0, 1.0)
+    eq_p_lo = np.clip(eq_p_lo, 0.0, 1.0)
+
+    eq_p    = np.maximum(eq_p_up, eq_p_lo)
+    df_adjp = _fdr_bh(df_p)
+    eq_adjp = _fdr_bh(eq_p)
+
+    is_equiv = (eq_adjp < p_thr) & (np.abs(log2fc) < eq_thr)
+    is_diff  = (df_adjp < p_thr) & (np.abs(log2fc) > df_thr)
+    status_kept = np.where(is_equiv, 1, np.where(is_diff, -1, 0)).astype(np.float64)
+
+    status_full = np.full(len(keep), np.nan)
+    status_full[keep] = status_kept
+
+    return BackendResult(
+        log2fc  = log2fc,
+        df_p    = df_p,
+        df_adjp = df_adjp,
+        eq_p    = eq_p,
+        eq_adjp = eq_adjp,
+        status  = status_full,
+        n_kept  = int(keep.sum()),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Timing / memory
+# ---------------------------------------------------------------------------
+
+def _timed(fn, repeat: int = 3) -> tuple[BackendResult, float]:
+    fn()  # warm-up: absorbs import overhead and first-call JIT
+    times, result = [], None
+    for _ in range(repeat):
+        t0 = time.perf_counter()
+        result = fn()
+        times.append(time.perf_counter() - t0)
+    return result, float(np.mean(times))   # type: ignore[return-value]
+
+
+def _peak_kb(fn) -> tuple[BackendResult, float]:
+    tracemalloc.start()
+    result = fn()
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    return result, peak / 1024
+
+
+# ---------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------
+
+def _accuracy(pred: np.ndarray, truth: np.ndarray) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "overall": (pred == truth).mean() if len(truth) > 0 else float("nan")
+    }
+    for lbl, name in ((1, "EQ"), (-1, "DF"), (0, "NS")):
+        tp = int(((pred == lbl) & (truth == lbl)).sum())
+        fp = int(((pred == lbl) & (truth != lbl)).sum())
+        fn = int(((pred != lbl) & (truth == lbl)).sum())
+        pr = tp / (tp + fp) if tp + fp > 0 else float("nan")
+        rc = tp / (tp + fn) if tp + fn > 0 else float("nan")
+        f1 = 2 * pr * rc / (pr + rc) if np.isfinite(pr + rc) and pr + rc > 0 else float("nan")
+        out[name] = {"TP": tp, "FP": fp, "FN": fn,
+                     "precision": pr, "recall": rc, "F1": f1}
+    return out
 
 
 def _numeric_agreement(
-    pkg_df: pl.DataFrame,
-    ref_df: "Any",  # pandas DataFrame
-    col_map: dict[str, str],
+    result: BackendResult, ref: BackendResult
 ) -> dict[str, dict[str, float]]:
-    """
-    Compare numeric columns between package and ref outputs.
-
-    col_map: {questvar_col: ref_col}
-    Returns per-column max_abs_diff and pearson_r.
-    """
-    import pandas as pd
-    agreement: dict[str, dict[str, float]] = {}
-    for pkg_col, ref_col in col_map.items():
-        if pkg_col not in pkg_df.columns:
+    """Max |diff| and Pearson r between result and ref for kept-protein columns."""
+    pairs = {
+        "log2fc":  (result.log2fc,  ref.log2fc),
+        "df_p":    (result.df_p,    ref.df_p),
+        "df_adjp": (result.df_adjp, ref.df_adjp),
+        "eq_p":    (result.eq_p,    ref.eq_p),
+        "eq_adjp": (result.eq_adjp, ref.eq_adjp),
+    }
+    out: dict[str, dict[str, float]] = {}
+    for col, (a, b) in pairs.items():
+        a, b = np.asarray(a, float), np.asarray(b, float)
+        if len(a) != len(b):
+            out[col] = {"max_abs_diff": float("nan"), "pearson_r": float("nan")}
             continue
-        if ref_col not in ref_df.columns:
+        m = np.isfinite(a) & np.isfinite(b)
+        if m.sum() < 2:
+            out[col] = {"max_abs_diff": float("nan"), "pearson_r": float("nan")}
             continue
-        a = pkg_df[pkg_col].to_numpy()
-        b = ref_df[ref_col].values
-        # filter out any rows where either is NaN
-        mask = np.isfinite(a) & np.isfinite(b)
-        if mask.sum() == 0:
-            continue
-        a, b = a[mask], b[mask]
-        max_diff = float(np.max(np.abs(a - b)))
-        if np.std(a) > 0 and np.std(b) > 0:
-            r = float(np.corrcoef(a, b)[0, 1])
-        else:
-            r = float("nan")
-        agreement[pkg_col] = {"max_abs_diff": max_diff, "pearson_r": r}
-    return agreement
+        a, b = a[m], b[m]
+        r = float(np.corrcoef(a, b)[0, 1]) if np.std(a) > 0 and np.std(b) > 0 else float("nan")
+        out[col] = {"max_abs_diff": float(np.max(np.abs(a - b))), "pearson_r": r}
+    return out
 
 
-def _timed(fn, *args, repeat: int = 3, **kwargs):
-    """Run fn(*args, **kwargs) `repeat` times, return (result, mean_wall_s)."""
-    times = []
-    result = None
-    for _ in range(repeat):
-        t0 = time.perf_counter()
-        result = fn(*args, **kwargs)
-        times.append(time.perf_counter() - t0)
-    return result, float(np.mean(times))
-
-
-def _peak_memory_bytes(fn, *args, **kwargs) -> tuple[Any, int]:
-    """Run fn once under tracemalloc, return (result, peak_bytes)."""
-    tracemalloc.start()
-    result = fn(*args, **kwargs)
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    return result, peak
-
-
-# ---------------------------------------------------------------------------
-# Run helpers
-# ---------------------------------------------------------------------------
-
-def _run_questvar(ds, eq_thr: float, df_thr: float, p_thr: float):
-    """Run the questvar package on a SyntheticDataset."""
-    from questvar import QuestVar
-    qv = QuestVar(
-        eq_thr=eq_thr,
-        df_thr=df_thr,
-        p_thr=p_thr,
-        correction="fdr",
-        is_log2=False,
-        is_paired=False,
-        var_equal=False,
-        cv_thr=0.15,
-    )
-    return qv.test(ds.data, ds.cond_1, ds.cond_2)
-
-
-def _run_ref(ds, eq_thr: float, df_thr: float, p_thr: float):
-    """Run the ref implementation on a SyntheticDataset."""
-    ref = _import_ref_tests()
-    s1, s2 = ds.to_numpy()
-    res_df, info_df = ref.run_questvar(
-        S1_arr=s1,
-        S2_arr=s2,
-        is_log2=False,
-        cv_thr=0.15,
-        p_thr=p_thr,
-        df_thr=df_thr,
-        eq_thr=eq_thr,
-        var_equal=False,
-        is_paired=False,
-        correction="fdr",
-        allow_missing=False,
-    )
-    return res_df, info_df
-
-
-# ---------------------------------------------------------------------------
-# Main comparison routine
-# ---------------------------------------------------------------------------
-
-def compare(
-    ds,
-    eq_thr: float = 0.5,
-    df_thr: float = 0.75,
-    p_thr: float = 0.01,
-    timing_repeat: int = 3,
-    verbose: bool = True,
-) -> dict[str, Any]:
-    """
-    Run both implementations on `ds`, compare results, return report dict.
-    """
-    # --- timing ---
-    pkg_result, pkg_time = _timed(
-        _run_questvar, ds, eq_thr, df_thr, p_thr, repeat=timing_repeat
-    )
-    ref_result, ref_time = _timed(
-        _run_ref, ds, eq_thr, df_thr, p_thr, repeat=timing_repeat
-    )
-    ref_df, _ = ref_result
-
-    # --- peak memory (single run each) ---
-    _pkg_mem_result, pkg_mem = _peak_memory_bytes(_run_questvar, ds, eq_thr, df_thr, p_thr)
-    _ref_mem_result, ref_mem = _peak_memory_bytes(_run_ref, ds, eq_thr, df_thr, p_thr)
-
-    # --- extract status arrays ---
-    # questvar: results are only for proteins that passed CV filter
-    pkg_data = pkg_result.data
-    pkg_info = pkg_result.info  # full protein list with status
-
-    # Align questvar results to all proteins via info_df
-    pkg_status_all = pkg_info["status"].to_numpy().astype(np.float64)
-    # NaN means filtered; keep as float so we can mix with np.nan
-    pkg_status_masked = np.where(np.isfinite(pkg_status_all), pkg_status_all, np.nan)
-
-    # ref: info_df rows correspond 1:1 to all input proteins
-    import pandas as pd
-    ref_df, ref_info = ref_result
-    ref_status_full = ref_info["Status"].values.astype(np.float64)  # NaN for filtered
-
-    # For accuracy, only score proteins that BOTH implementations kept
-    both_kept = np.isfinite(pkg_status_masked) & np.isfinite(ref_status_full)
-    truth_sub = ds.truth[both_kept]
-    pkg_sub   = pkg_status_masked[both_kept].astype(np.int8)
-    ref_sub   = ref_status_full[both_kept].astype(np.int8)
-
-    pkg_confusion = _confusion_matrix(pkg_sub, truth_sub)
-    ref_confusion = _confusion_matrix(ref_sub, truth_sub)
-
-    # status agreement between pkg and ref (where both kept)
-    status_agree = int((pkg_sub == ref_sub).sum())
-    status_disagree = int((pkg_sub != ref_sub).sum())
-
-    # disagreement breakdown: which transitions
-    transitions: dict[str, int] = {}
+def _transitions(
+    a: np.ndarray, b: np.ndarray, name_a: str, name_b: str
+) -> dict[str, int]:
     labels = {1: "EQ", -1: "DF", 0: "NS"}
-    for p_lbl in [1, -1, 0]:
-        for r_lbl in [1, -1, 0]:
-            if p_lbl == r_lbl:
-                continue
-            key = f"pkg={labels[p_lbl]} ref={labels[r_lbl]}"
-            count = int(((pkg_sub == p_lbl) & (ref_sub == r_lbl)).sum())
-            if count > 0:
-                transitions[key] = count
-
-    # --- numeric agreement on kept proteins ---
-    # questvar result columns: log2fc, df_p, df_adjp, eq_p, eq_adjp
-    # ref result columns:      log2FC, df_p, df_adjp, eq_p, eq_adjp
-    col_map = {
-        "log2fc":   "log2FC",
-        "df_p":     "df_p",
-        "df_adjp":  "df_adjp",
-        "eq_p":     "eq_p",
-        "eq_adjp":  "eq_adjp",
-    }
-    # subset pkg_data to proteins in both_kept that are in pkg_data
-    # pkg_data is indexed by protein_id; we need to align properly
-    pkg_kept_ids = pkg_info.filter(
-        pl.col("status").is_not_nan()
-    )["protein_id"].to_list()
-    pkg_data_aligned = pkg_data  # already filtered
-
-    # ref_df is indexed by original protein index (subidx)
-    # Align by position within the kept subset
-    ref_df_np = ref_df.rename(columns={"log2FC": "log2FC"})
-
-    numeric = _numeric_agreement(pkg_data_aligned, ref_df_np, col_map)
-
-    report = {
-        "n_proteins": ds.n_proteins,
-        "n_kept_pkg": int(np.isfinite(pkg_status_masked).sum()),
-        "n_kept_ref": int(np.isfinite(ref_status_full).sum()),
-        "n_both_kept": int(both_kept.sum()),
-        "timing": {
-            "pkg_mean_s": round(pkg_time, 4),
-            "ref_mean_s": round(ref_time, 4),
-            "speedup_pkg_vs_ref": round(ref_time / pkg_time, 2) if pkg_time > 0 else float("nan"),
-        },
-        "memory": {
-            "pkg_peak_kb": round(pkg_mem / 1024, 1),
-            "ref_peak_kb": round(ref_mem / 1024, 1),
-        },
-        "accuracy_vs_truth": {
-            "questvar": pkg_confusion,
-            "ref": ref_confusion,
-        },
-        "status_agreement": {
-            "agree": status_agree,
-            "disagree": status_disagree,
-            "disagree_rate": round(status_disagree / len(pkg_sub), 4) if len(pkg_sub) > 0 else 0.0,
-            "transitions": transitions,
-        },
-        "numeric_agreement": numeric,
+    mask = np.isfinite(a) & np.isfinite(b)
+    a, b = a[mask].astype(int), b[mask].astype(int)
+    return {
+        f"{name_a}={labels[la]} {name_b}={labels[lb]}": int(((a == la) & (b == lb)).sum())
+        for la in [1, -1, 0] for lb in [1, -1, 0]
+        if la != lb and ((a == la) & (b == lb)).any()
     }
 
-    if verbose:
-        _print_report(report, ds)
 
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
+
+UNPAIRED_BACKENDS: list[tuple[str, dict]] = [
+    ("questvar_welch",   {"var_equal": False, "is_paired": False, "_impl": "questvar"}),
+    ("questvar_student", {"var_equal": True,  "is_paired": False, "_impl": "questvar"}),
+    ("ref_welch",        {"var_equal": False, "is_paired": False, "_impl": "ref"}),
+    ("ref_student",      {"var_equal": True,  "is_paired": False, "_impl": "ref"}),
+    ("scipy_welch",      {"equal_var": False, "paired":    False, "_impl": "scipy"}),
+    ("scipy_student",    {"equal_var": True,  "paired":    False, "_impl": "scipy"}),
+]
+
+PAIRED_BACKENDS: list[tuple[str, dict]] = [
+    # var_equal is irrelevant for paired tests: the test operates on differences
+    # (one-sample), so there is only one variance to consider. All paired
+    # backends use var_equal=True to satisfy ref's unnecessary guard.
+    ("questvar_paired", {"var_equal": True, "is_paired": True, "_impl": "questvar"}),
+    ("ref_paired",      {"var_equal": True, "is_paired": True, "_impl": "ref"}),
+    ("scipy_paired",    {"equal_var": True, "paired":    True,  "_impl": "scipy"}),
+]
+
+
+def _dispatch(name, cfg, ds, eq_thr, df_thr, p_thr) -> BackendResult:
+    impl = cfg["_impl"]
+    kw   = {k: v for k, v in cfg.items() if k != "_impl"}
+    if impl == "questvar":
+        return _questvar(ds, eq_thr=eq_thr, df_thr=df_thr, p_thr=p_thr, **kw)
+    if impl == "ref":
+        return _ref(ds, eq_thr=eq_thr, df_thr=df_thr, p_thr=p_thr, **kw)
+    return _scipy(ds, eq_thr=eq_thr, df_thr=df_thr, p_thr=p_thr, **kw)
+
+
+def run_comparison(
+    ds,
+    backends: list[tuple[str, dict]],
+    scipy_ref_name: str,
+    eq_thr: float,
+    df_thr: float,
+    p_thr:  float,
+    repeat: int = 3,
+) -> dict[str, dict]:
+    results:  dict[str, BackendResult] = {}
+    timings:  dict[str, float]         = {}
+    memories: dict[str, float]         = {}
+
+    for name, cfg in backends:
+        fn = lambda n=name, c=cfg: _dispatch(n, c, ds, eq_thr, df_thr, p_thr)
+        res, t   = _timed(fn, repeat=repeat)
+        _,   mem = _peak_kb(fn)
+        results[name]  = res
+        timings[name]  = t
+        memories[name] = mem
+
+    scipy_ref = results[scipy_ref_name]
+
+    report: dict[str, dict] = {}
+    for name, res in results.items():
+        both = np.isfinite(scipy_ref.status) & np.isfinite(res.status)
+        report[name] = {
+            "n_kept":    res.n_kept,
+            "accuracy":  _accuracy(res.status[both].astype(int), ds.truth[both]),
+            "timing_s":  timings[name],
+            "memory_kb": memories[name],
+            "numeric":   _numeric_agreement(res, scipy_ref),
+            "vs_scipy":  _transitions(res.status, scipy_ref.status,
+                                      name, scipy_ref_name),
+        }
     return report
 
 
 # ---------------------------------------------------------------------------
-# Pretty printer
+# Printer
 # ---------------------------------------------------------------------------
 
-SEP = "-" * 70
+SEP  = "=" * 78
+SEP2 = "-" * 78
 
 
-def _print_report(report: dict, ds) -> None:
+def _f(v, w=8, p=4):
+    return f"{'nan':>{w}}" if v != v else f"{v:>{w}.{p}f}"
+
+
+def print_report(report, ds, label, eq_thr, df_thr, p_thr) -> None:
+    print(f"\n{SEP}")
+    print(f"  {label}")
+    print(f"  n={ds.n_proteins} | truth={ds.summary()} "
+          f"| eq_thr={eq_thr} df_thr={df_thr} fdr={p_thr}")
     print(SEP)
-    print(f"Dataset: {ds.n_proteins} proteins | ground truth: {ds.summary()}")
-    print(SEP)
 
-    t = report["timing"]
-    m = report["memory"]
-    print(f"{'Timing':}")
-    print(f"  questvar  {t['pkg_mean_s']:.4f} s")
-    print(f"  ref       {t['ref_mean_s']:.4f} s")
-    speedup = t["speedup_pkg_vs_ref"]
-    direction = "faster" if speedup >= 1 else "slower"
-    print(f"  speedup   {abs(speedup):.2f}x  (questvar is {direction} than ref)")
+    # Accuracy
+    print(f"\n{'Backend':<22} {'Acc':>5}  {'EQ F1':>6}  {'DF F1':>6}  {'NS F1':>6}"
+          f"  {'Recall EQ':>9}  {'Recall DF':>9}  {'Recall NS':>9}")
+    print(SEP2)
+    for name, d in report.items():
+        acc = d["accuracy"]
+        print(
+            f"  {name:<20} {_f(acc['overall'],5,3)}"
+            f"  {_f(acc['EQ']['F1'],6,3)}"
+            f"  {_f(acc['DF']['F1'],6,3)}"
+            f"  {_f(acc['NS']['F1'],6,3)}"
+            f"  {_f(acc['EQ']['recall'],9,3)}"
+            f"  {_f(acc['DF']['recall'],9,3)}"
+            f"  {_f(acc['NS']['recall'],9,3)}"
+        )
 
-    print(f"Memory (peak, single run)")
-    print(f"  questvar  {m['pkg_peak_kb']:.1f} KB")
-    print(f"  ref       {m['ref_peak_kb']:.1f} KB")
+    # Speed & memory
+    print(f"\n{'Backend':<22} {'Time(s)':>8}  {'Mem(KB)':>8}  {'n_kept':>7}")
+    print(SEP2)
+    fastest = min(d["timing_s"] for d in report.values())
+    for name, d in report.items():
+        t   = d["timing_s"]
+        rel = f"  {t/fastest:>5.2f}x" if t > fastest * 1.01 else "  1.00x"
+        print(f"  {name:<20} {_f(t,7,4)}  {_f(d['memory_kb'],7,1)}  "
+              f"{d['n_kept']:>7}{rel}")
 
-    print(f"Proteins kept by CV filter")
-    print(f"  questvar  {report['n_kept_pkg']}")
-    print(f"  ref       {report['n_kept_ref']}")
-    print(f"  both      {report['n_both_kept']}")
+    # Numeric agreement vs scipy
+    print(f"\nNumeric agreement vs scipy baseline  (max|diff| / r)")
+    print(f"{'Backend':<22}  {'log2fc':>18}  {'df_p':>18}  "
+          f"{'df_adjp':>18}  {'eq_p':>18}  {'eq_adjp':>18}")
+    print(SEP2)
+    for name, d in report.items():
+        def cell(col):
+            v = d["numeric"].get(col, {})
+            if not v:
+                return f"{'n/a':>18}"
+            return f"{v['max_abs_diff']:>8.2e} /{v['pearson_r']:>8.5f}"
+        print(f"  {name:<20}  " + "  ".join(cell(c) for c in
+              ("log2fc", "df_p", "df_adjp", "eq_p", "eq_adjp")))
 
-    print("Accuracy vs ground truth (proteins kept by both implementations)")
-    for impl in ("questvar", "ref"):
-        acc = report["accuracy_vs_truth"][impl]
-        print(f"  {impl:<10} overall={acc['accuracy']:.3f}", end="")
-        for cls in ("EQ", "DF", "NS"):
-            d = acc[cls]
-            print(f"  {cls} F1={d['F1']:.3f}", end="")
-        print()
-
-    sa = report["status_agreement"]
-    print(f"Status agreement (questvar vs ref)")
-    print(f"  agree={sa['agree']}  disagree={sa['disagree']}"
-          f"  rate={sa['disagree_rate']:.4f}")
-    if sa["transitions"]:
-        print("  Disagreement transitions:")
-        for k, v in sa["transitions"].items():
-            print(f"    {k}: {v}")
+    # Status vs scipy
+    any_diff = any(d["vs_scipy"] for d in report.values())
+    if any_diff:
+        print(f"\nStatus shifts vs scipy baseline")
+        print(SEP2)
+        for name, d in report.items():
+            for trans, cnt in d["vs_scipy"].items():
+                print(f"  {name:<22}  {trans}: {cnt}")
     else:
-        print("  No disagreements between pkg and ref.")
-
-    print("Numeric agreement (questvar vs ref, max_abs_diff / pearson_r)")
-    for col, d in report["numeric_agreement"].items():
-        print(f"  {col:<12} max_diff={d['max_abs_diff']:.2e}  r={d['pearson_r']:.6f}")
-
-    print(SEP)
+        print(f"\n  No status shifts vs scipy baseline.")
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
-def _parse_args():
-    p = argparse.ArgumentParser(description="Compare questvar package vs ref scripts.")
-    p.add_argument(
-        "--config",
-        default="medium",
-        choices=list(__import__("tools.synthesize", fromlist=["CONFIGS"]).CONFIGS.keys()),
-        help="Preset dataset configuration (default: medium)",
-    )
-    p.add_argument(
-        "--all-configs",
-        action="store_true",
-        help="Run all preset configurations",
-    )
-    p.add_argument(
-        "--eq-thr", type=float, default=0.5,
-        help="Equivalence boundary (default: 0.5)",
-    )
-    p.add_argument(
-        "--df-thr", type=float, default=0.75,
-        help="Difference boundary (default: 0.75)",
-    )
-    p.add_argument(
-        "--fdr", type=float, default=0.01,
-        help="FDR cutoff (default: 0.01)",
-    )
-    p.add_argument(
-        "--repeat", type=int, default=3,
-        help="Timing repetitions (default: 3)",
-    )
-    return p.parse_args()
-
-
 def main() -> None:
-    # Add repo root so `tools.synthesize` is importable
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
+    from tools.synthesize import CONFIGS, make_balanced_dataset, make_paired_dataset
 
-    from tools.synthesize import CONFIGS, make_balanced_dataset
+    p = argparse.ArgumentParser()
+    p.add_argument("--config",      default="medium", choices=list(CONFIGS.keys()))
+    p.add_argument("--all-configs", action="store_true")
+    p.add_argument("--no-paired",   action="store_true")
+    p.add_argument("--eq-thr",  type=float, default=0.5)
+    p.add_argument("--df-thr",  type=float, default=0.75)
+    p.add_argument("--fdr",     type=float, default=0.01)
+    p.add_argument("--repeat",  type=int,   default=3,
+                   help="Timing reps per backend. Use 1 for large configs "
+                        "(scipy loop is slow).")
+    args = p.parse_args()
 
-    args = _parse_args()
-    eq_thr = args.eq_thr
-    df_thr = args.df_thr
-    p_thr = args.fdr
-    repeat = args.repeat
+    cfgs   = list(CONFIGS.keys()) if args.all_configs else [args.config]
+    eq_thr, df_thr, p_thr = args.eq_thr, args.df_thr, args.fdr
 
-    configs_to_run = list(CONFIGS.keys()) if args.all_configs else [args.config]
+    for cfg_name in cfgs:
+        cfg_obj = CONFIGS[cfg_name]
 
-    for name in configs_to_run:
-        print(f"\n{'='*70}")
-        print(f"Config: {name}")
-        print(f"  eq_thr={eq_thr}  df_thr={df_thr}  fdr={p_thr}")
-        ds = make_balanced_dataset(CONFIGS[name])
-        compare(ds, eq_thr=eq_thr, df_thr=df_thr, p_thr=p_thr, timing_repeat=repeat)
+        ds_unp = make_balanced_dataset(cfg_obj)
+        rep_unp = run_comparison(
+            ds_unp, UNPAIRED_BACKENDS, "scipy_welch",
+            eq_thr, df_thr, p_thr, repeat=args.repeat,
+        )
+        print_report(rep_unp, ds_unp, f"Config: {cfg_name}  UNPAIRED",
+                     eq_thr, df_thr, p_thr)
+
+        if not args.no_paired:
+            ds_pair = make_paired_dataset(cfg_obj)
+            rep_pair = run_comparison(
+                ds_pair, PAIRED_BACKENDS, "scipy_paired",
+                eq_thr, df_thr, p_thr, repeat=args.repeat,
+            )
+            print_report(rep_pair, ds_pair, f"Config: {cfg_name}  PAIRED",
+                         eq_thr, df_thr, p_thr)
 
 
 if __name__ == "__main__":

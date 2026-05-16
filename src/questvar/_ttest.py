@@ -136,6 +136,7 @@ def run_unpaired(
     df_thr: float = 1.0,
     p_thr: float = 0.05,
     correction: str | None = "fdr",
+    equal_var: bool = False,
 ) -> NDArray[np.float64]:
     from questvar._correction import p_adjust
 
@@ -150,10 +151,16 @@ def run_unpaired(
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        se = np.sqrt(v1 / n1 + v2 / n2)
-        num = (v1 / n1 + v2 / n2) ** 2
-        den = (v1 / n1) ** 2 / (n1 - 1.0) + (v2 / n2) ** 2 / (n2 - 1.0)
-        df = np.where(den > 0, num / den, 1.0)
+        if equal_var:
+            df_pool = n1 + n2 - 2.0
+            sp = ((n1 - 1.0) * v1 + (n2 - 1.0) * v2) / df_pool
+            se = np.sqrt(sp * (1.0 / n1 + 1.0 / n2))
+            df = df_pool
+        else:
+            se = np.sqrt(v1 / n1 + v2 / n2)
+            num = (v1 / n1 + v2 / n2) ** 2
+            den = (v1 / n1) ** 2 / (n1 - 1.0) + (v2 / n2) ** 2 / (n2 - 1.0)
+            df = np.where(den > 0, num / den, 1.0)
 
     def _t_pval(diff: NDArray, alt: str) -> NDArray:
         with warnings.catch_warnings():

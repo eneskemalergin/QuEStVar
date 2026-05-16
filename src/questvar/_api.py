@@ -87,6 +87,7 @@ class QuestVar:
                 df_thr=config.df_thr,
                 p_thr=config.p_thr,
                 correction=config.correction,
+                equal_var=config.var_equal,
             )
 
         result_dict = {
