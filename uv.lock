@@ -997,6 +997,7 @@ yaml = [
 [package.dev-dependencies]
 dev = [
     { name = "hypothesis" },
+    { name = "matplotlib" },
     { name = "mkdocs" },
     { name = "mkdocstrings", extra = ["python"] },
     { name = "pandas" },
@@ -1022,6 +1023,7 @@ provides-extras = ["plots", "yaml", "cli", "accel", "all"]
 [package.metadata.requires-dev]
 dev = [
     { name = "hypothesis", specifier = ">=6.0" },
+    { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "mkdocs", specifier = ">=1.6" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.26" },
     { name = "pandas", specifier = ">=3.0.3" },

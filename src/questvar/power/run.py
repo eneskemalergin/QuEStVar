@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import time
-from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -15,20 +14,11 @@ if TYPE_CHECKING:
 
 
 def run_power_analysis(
-    mode: str = "pure_equivalence",
     target_sei: float = 0.8,
     eq_boundaries: np.ndarray | None = None,
     n_reps_list: list[int] | None = None,
     cv_mean_list: list[float] | None = None,
     cv_thr_list: list[float] | None = None,
-    effect_size_grid: list[float] | np.ndarray | None = None,
-    equivalent_fraction: float = 1.0,
-    search_axis: str = "n_reps",
-    solver_objective: str = "target_power",
-    constraint_false_equiv_max: float | None = None,
-    constraint_sensitivity_min: float | None = None,
-    search_min_reps: int = 2,
-    search_max_reps: int = 64,
     random_seed: int | None = None,
     n_prts: int = 10000,
     n_iterations: int = 10,
@@ -45,10 +35,9 @@ def run_power_analysis(
 ) -> PowerResults:
     start = time.perf_counter()
     config = PowerConfig(
-        mode=mode,
         n_prts=n_prts,
         n_reps=n_reps_list[0] if n_reps_list else 5,
-        cv_mean=cv_mean_list[0] if cv_mean_list else 0.275,
+        cv_mean=cv_mean_list[0] if cv_mean_list else 0.20,
         eq_thr=float(eq_boundaries[0]) if eq_boundaries is not None else 0.5,
         p_thr=p_thr,
         df_thr=df_thr,
@@ -59,20 +48,8 @@ def run_power_analysis(
         target_power=target_power,
         eq_boundaries=tuple(eq_boundaries) if eq_boundaries is not None else (0.1, 0.3, 0.5, 0.7, 0.9),
         n_reps_grid=tuple(n_reps_list) if n_reps_list is not None else (3, 5, 10, 20),
-        cv_mean_grid=tuple(cv_mean_list) if cv_mean_list is not None else (0.15, 0.275, 0.40),
+        cv_mean_grid=tuple(cv_mean_list) if cv_mean_list is not None else (0.10, 0.20, 0.30),
         cv_thr_grid=tuple(cv_thr_list) if cv_thr_list is not None else (cv_thr,),
-        effect_size_grid=(
-            tuple(effect_size_grid)
-            if effect_size_grid is not None
-            else (-2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0)
-        ),
-        equivalent_fraction=equivalent_fraction,
-        search_axis=search_axis,
-        solver_objective=solver_objective,
-        constraint_false_equiv_max=constraint_false_equiv_max,
-        constraint_sensitivity_min=constraint_sensitivity_min,
-        search_min_reps=search_min_reps,
-        search_max_reps=search_max_reps,
         random_seed=random_seed,
         int_mu=int_mu,
         int_sd=int_sd,
@@ -86,23 +63,23 @@ def run_power_analysis(
 
     design_points = _build_design_points(config, cv_thr_list)
 
-    tasks = [(point, run_id) for point in design_points for run_id in range(config.n_iterations)]
-
-    worker = partial(_simulate_one, config=config.to_dict())
+    # One task per design point; all iterations run inside the worker.
+    # This avoids creating QuestVar and deserializing PowerConfig once per iteration.
+    tasks = [(point, config.to_dict()) for point in design_points]
 
     if n_jobs is None or n_jobs > 1:
         n_workers = n_jobs if n_jobs is not None else mp.cpu_count()
         with mp.Pool(n_workers) as pool:
-            run_metrics = pool.map(worker, tasks)
+            batches = pool.map(_simulate_design_point, tasks)
     else:
-        run_metrics = [worker(task) for task in tasks]
+        batches = [_simulate_design_point(t) for t in tasks]
+
+    run_metrics = [m for batch in batches for m in batch]
 
     design_grid = _summarize_design_grid(run_metrics, config)
-    calibration_metrics = _summarize_calibration_metrics(run_metrics, config)
-    search_results = [] if config.mode == "calibration" else _solve_design_targets(design_grid, config)
+    search_results = _solve_design_targets(design_grid, config)
     monotonicity_checks = _collect_monotonicity_checks(design_grid, config)
     diagnostics = {
-        "mode": config.mode,
         "used_full_pipeline": True,
         "n_design_points": len(design_points),
         "n_runs": len(run_metrics),
@@ -122,40 +99,24 @@ def run_power_analysis(
             "config": config.to_dict(),
             "design_grid": design_grid,
             "run_metrics": run_metrics,
-            "calibration_metrics": calibration_metrics,
             "search_results": search_results,
             "diagnostics": diagnostics,
         }
     )
 
 
-def _simulate_one(task: tuple, config: dict) -> dict:
+def _simulate_design_point(args: tuple) -> list[dict]:
+    """Run all MC iterations for one design point. Returns per-iteration metrics.
+
+    Batching all iterations here means QuestVar and PowerConfig are constructed
+    once per design point rather than once per iteration, and the multiprocessing
+    pool carries one task per design point instead of one per (design_point, iteration).
+    """
     from questvar._api import QuestVar
 
-    point, run_id = task
-    cfg = PowerConfig.from_dict(config)
+    point, config_dict = args
+    cfg = PowerConfig.from_dict(config_dict)
     n_reps = int(point["n_reps"])
-    data = simulate_data(
-        n_prts=cfg.n_prts,
-        n_reps=n_reps * 2,
-        int_mu=cfg.int_mu,
-        int_sd=cfg.int_sd,
-        cv_mu=float(point["cv_mean"]),
-        cv_k=cfg.cv_k,
-        cv_theta=cfg.cv_theta,
-        seed=run_id if cfg.random_seed is None else cfg.random_seed + run_id,
-    )
-    effect_size = float(point.get("effect_size", 0.0))
-    truth_labels = np.full(cfg.n_prts, "equivalent", dtype=object)
-    n_equivalent_true = cfg.n_prts
-    if cfg.mode != "pure_equivalence":
-        n_equivalent_true = int(round(cfg.n_prts * cfg.equivalent_fraction))
-        truth_labels[n_equivalent_true:] = _classify_truth(effect_size, cfg.eq_thr, cfg.df_thr)
-    if effect_size != 0.0 and n_equivalent_true < cfg.n_prts:
-        data[n_equivalent_true:, n_reps:] *= np.power(2.0, -effect_size)
-    elif effect_size != 0.0 and cfg.mode == "calibration":
-        truth_labels[:] = _classify_truth(effect_size, cfg.eq_thr, cfg.df_thr)
-        data[:, n_reps:] *= np.power(2.0, -effect_size)
 
     qv = QuestVar(
         cv_thr=float(point["cv_thr"]),
@@ -169,171 +130,78 @@ def _simulate_one(task: tuple, config: dict) -> dict:
     cond_1 = list(range(n_reps))
     cond_2 = list(range(n_reps, 2 * n_reps))
 
-    try:
-        result = qv.test(data, cond_1=cond_1, cond_2=cond_2)
-        status_full = result.info["status"].to_numpy()
-    except ValueError as exc:
-        if "No proteins passed CV filter" not in str(exc):
-            raise
-        status_full = np.full(cfg.n_prts, np.nan, dtype=np.float64)
+    # All proteins are truly equivalent in pure-equivalence analysis.
+    n_equivalent_true = cfg.n_prts
 
-    n_total = cfg.n_prts
-    valid_mask = ~np.isnan(status_full)
-    equiv_mask = truth_labels == "equivalent"
-    diff_mask = truth_labels == "differential"
-    n_tested = int(np.sum(valid_mask))
-    n_equiv = int(np.sum(status_full == 1))
-    n_diff = int(np.sum(status_full == -1))
-    n_ns = int(np.sum(status_full == 0))
-    n_equivalent_true_total = int(np.sum(equiv_mask))
-    n_differential_true_total = int(np.sum(diff_mask))
-    sei = (
-        float(np.sum((status_full == 1) & equiv_mask)) / n_equivalent_true_total
-        if n_equivalent_true_total > 0
-        else float("nan")
-    )
-    success = sei >= cfg.target_sei
-    status_prob_equiv = n_equiv / n_total
-    status_prob_ns = n_ns / n_total
-    status_prob_diff = n_diff / n_total
-    false_equiv_rate = (
-        float(np.sum((status_full == 1) & diff_mask)) / n_differential_true_total
-        if n_differential_true_total > 0
-        else np.nan
-    )
-    false_diff_rate = (
-        float(np.sum((status_full == -1) & equiv_mask)) / n_equivalent_true_total
-        if n_equivalent_true_total > 0
-        else np.nan
-    )
-    differential_sensitivity = (
-        float(np.sum((status_full == -1) & diff_mask)) / n_differential_true_total
-        if n_differential_true_total > 0
-        else np.nan
-    )
+    metrics: list[dict] = []
+    for run_id in range(cfg.n_iterations):
+        seed = run_id if cfg.random_seed is None else cfg.random_seed + run_id
+        data = simulate_data(
+            n_prts=cfg.n_prts,
+            n_reps=n_reps * 2,
+            int_mu=cfg.int_mu,
+            int_sd=cfg.int_sd,
+            cv_mu=float(point["cv_mean"]),
+            cv_k=cfg.cv_k,
+            cv_theta=cfg.cv_theta,
+            seed=seed,
+        )
 
-    return {
-        "mode": cfg.mode,
-        "parameter": str(point["parameter"]),
-        "value": float(point["value"]),
-        "run_id": run_id,
-        "seed": run_id if cfg.random_seed is None else cfg.random_seed + run_id,
-        "n_prts": cfg.n_prts,
-        "n_reps": n_reps,
-        "eq_thr": float(point["eq_thr"]),
-        "df_thr": cfg.df_thr,
-        "cv_thr": float(point["cv_thr"]),
-        "cv_mean": float(point["cv_mean"]),
-        "effect_size": effect_size,
-        "truth": _dominant_truth_label(truth_labels),
-        "equivalent_fraction": cfg.equivalent_fraction,
-        "target_sei": cfg.target_sei,
-        "target_power": cfg.target_power,
-        "n_iterations": cfg.n_iterations,
-        "sei": sei,
-        "equiv_rate": status_prob_equiv,
-        "ns_rate": status_prob_ns,
-        "diff_rate": status_prob_diff,
-        "excluded_rate": (n_total - n_tested) / n_total,
-        "n_tested": n_tested,
-        "n_equivalent_true": n_equivalent_true_total,
-        "n_differential_true": n_differential_true_total,
-        "false_equiv_rate": false_equiv_rate,
-        "false_diff_rate": false_diff_rate,
-        "differential_sensitivity": differential_sensitivity,
-        "status_prob_equiv": status_prob_equiv,
-        "status_prob_ns": status_prob_ns,
-        "status_prob_diff": status_prob_diff,
-        "success": success,
-    }
+        try:
+            result = qv.test(data, cond_1=cond_1, cond_2=cond_2)
+            status_full = result.info["status"].to_numpy()
+        except ValueError as exc:
+            if "No proteins passed CV filter" not in str(exc):
+                raise
+            status_full = np.full(cfg.n_prts, np.nan, dtype=np.float64)
+
+        n_total = cfg.n_prts
+        n_tested = int(np.sum(~np.isnan(status_full)))
+        n_equiv = int(np.sum(status_full == 1))
+        n_diff = int(np.sum(status_full == -1))
+        n_ns = int(np.sum(status_full == 0))
+        # SEI = sensitivity for equivalent proteins (all proteins are equivalent here)
+        sei = n_equiv / n_equivalent_true
+        equiv_rate = n_equiv / n_total
+        ns_rate = n_ns / n_total
+        diff_rate = n_diff / n_total
+        # false_diff_rate: proportion of truly-equivalent proteins incorrectly called differential
+        false_diff_rate = n_diff / n_equivalent_true
+
+        metrics.append(
+            {
+                "parameter": str(point["parameter"]),
+                "value": float(point["value"]),
+                "run_id": run_id,
+                "seed": seed,
+                "n_prts": n_total,
+                "n_reps": n_reps,
+                "eq_thr": float(point["eq_thr"]),
+                "df_thr": cfg.df_thr,
+                "cv_thr": float(point["cv_thr"]),
+                "cv_mean": float(point["cv_mean"]),
+                "target_sei": cfg.target_sei,
+                "target_power": cfg.target_power,
+                "n_iterations": cfg.n_iterations,
+                "sei": sei,
+                "equiv_rate": equiv_rate,
+                "ns_rate": ns_rate,
+                "diff_rate": diff_rate,
+                "excluded_rate": (n_total - n_tested) / n_total,
+                "n_tested": n_tested,
+                "n_equivalent_true": n_equivalent_true,
+                "false_diff_rate": false_diff_rate,
+                "success": sei >= cfg.target_sei,
+            }
+        )
+
+    return metrics
 
 
 def _build_design_points(
     config: PowerConfig,
     cv_thr_list: list[float],
 ) -> list[dict[str, float | int | str]]:
-    if config.mode == "optimal_design":
-        search_effect_size = _default_search_effect_size(config)
-        if config.search_axis == "n_reps":
-            return [
-                {
-                    "parameter": "n_reps",
-                    "value": n_reps,
-                    "n_reps": n_reps,
-                    "eq_thr": config.eq_thr,
-                    "cv_mean": config.cv_mean,
-                    "cv_thr": config.cv_thr,
-                    "effect_size": search_effect_size,
-                }
-                for n_reps in range(config.search_min_reps, config.search_max_reps + 1)
-            ]
-        if config.search_axis == "eq_thr":
-            return [
-                {
-                    "parameter": "eq_thr",
-                    "value": eq_thr,
-                    "n_reps": config.n_reps,
-                    "eq_thr": eq_thr,
-                    "cv_mean": config.cv_mean,
-                    "cv_thr": config.cv_thr,
-                    "effect_size": search_effect_size,
-                }
-                for eq_thr in config.eq_boundaries
-            ]
-        if config.search_axis == "cv_mean":
-            return [
-                {
-                    "parameter": "cv_mean",
-                    "value": cv_mean,
-                    "n_reps": config.n_reps,
-                    "eq_thr": config.eq_thr,
-                    "cv_mean": cv_mean,
-                    "cv_thr": config.cv_thr,
-                    "effect_size": search_effect_size,
-                }
-                for cv_mean in config.cv_mean_grid
-            ]
-        return [
-            {
-                "parameter": "cv_thr",
-                "value": cv_thr_value,
-                "n_reps": config.n_reps,
-                "eq_thr": config.eq_thr,
-                "cv_mean": config.cv_mean,
-                "cv_thr": cv_thr_value,
-                "effect_size": search_effect_size,
-            }
-            for cv_thr_value in config.cv_thr_grid
-        ]
-
-    if config.mode == "calibration":
-        design_points = [
-            {
-                "parameter": "effect_size",
-                "value": effect_size,
-                "n_reps": config.n_reps,
-                "eq_thr": config.eq_thr,
-                "cv_mean": config.cv_mean,
-                "cv_thr": config.cv_thr,
-                "effect_size": effect_size,
-            }
-            for effect_size in config.effect_size_grid
-        ]
-        design_points.extend(
-            {
-                "parameter": "effect_size_n_reps",
-                "value": effect_size,
-                "n_reps": n_reps,
-                "eq_thr": config.eq_thr,
-                "cv_mean": config.cv_mean,
-                "cv_thr": config.cv_thr,
-                "effect_size": effect_size,
-            }
-            for effect_size in config.effect_size_grid
-            for n_reps in config.n_reps_grid
-        )
-        return design_points
-
     design_points: list[dict[str, float | int | str]] = []
     for eq_thr in config.eq_boundaries:
         design_points.append(
@@ -344,7 +212,6 @@ def _build_design_points(
                 "eq_thr": eq_thr,
                 "cv_mean": config.cv_mean,
                 "cv_thr": config.cv_thr,
-                "effect_size": 0.0,
             }
         )
     for n_reps in config.n_reps_grid:
@@ -356,7 +223,6 @@ def _build_design_points(
                 "eq_thr": config.eq_thr,
                 "cv_mean": config.cv_mean,
                 "cv_thr": config.cv_thr,
-                "effect_size": 0.0,
             }
         )
     for cv_mean in config.cv_mean_grid:
@@ -368,7 +234,6 @@ def _build_design_points(
                 "eq_thr": config.eq_thr,
                 "cv_mean": cv_mean,
                 "cv_thr": config.cv_thr,
-                "effect_size": 0.0,
             }
         )
     for cv_thr_value in cv_thr_list:
@@ -380,46 +245,37 @@ def _build_design_points(
                 "eq_thr": config.eq_thr,
                 "cv_mean": config.cv_mean,
                 "cv_thr": float(cv_thr_value),
-                "effect_size": 0.0,
             }
         )
-    design_points.extend(
-        {
-            "parameter": "eq_thr_n_reps",
-            "value": eq_thr,
-            "n_reps": n_reps,
-            "eq_thr": eq_thr,
-            "cv_mean": config.cv_mean,
-            "cv_thr": config.cv_thr,
-            "effect_size": 0.0,
-        }
-        for eq_thr in config.eq_boundaries
-        for n_reps in config.n_reps_grid
-    )
-    design_points.extend(
-        {
-            "parameter": "eq_thr_n_reps_cv_thr",
-            "value": eq_thr,
-            "n_reps": n_reps,
-            "eq_thr": eq_thr,
-            "cv_mean": config.cv_mean,
-            "cv_thr": float(cv_thr_value),
-            "effect_size": 0.0,
-        }
-        for eq_thr in config.eq_boundaries
-        for n_reps in config.n_reps_grid
-        for cv_thr_value in cv_thr_list
-    )
+    # Cross-product axes only when both participating axes have multiple distinct values.
+    if len(config.eq_boundaries) > 1 and len(config.n_reps_grid) > 1:
+        design_points.extend(
+            {
+                "parameter": "eq_thr_n_reps",
+                "value": eq_thr,
+                "n_reps": n_reps,
+                "eq_thr": eq_thr,
+                "cv_mean": config.cv_mean,
+                "cv_thr": config.cv_thr,
+            }
+            for eq_thr in config.eq_boundaries
+            for n_reps in config.n_reps_grid
+        )
+    if len(config.eq_boundaries) > 1 and len(config.n_reps_grid) > 1 and len(cv_thr_list) > 1:
+        design_points.extend(
+            {
+                "parameter": "eq_thr_n_reps_cv_thr",
+                "value": eq_thr,
+                "n_reps": n_reps,
+                "eq_thr": eq_thr,
+                "cv_mean": config.cv_mean,
+                "cv_thr": float(cv_thr_value),
+            }
+            for eq_thr in config.eq_boundaries
+            for n_reps in config.n_reps_grid
+            for cv_thr_value in cv_thr_list
+        )
     return design_points
-
-
-def _classify_truth(effect_size: float, eq_thr: float, df_thr: float) -> str:
-    abs_effect = abs(effect_size)
-    if abs_effect < eq_thr:
-        return "equivalent"
-    if abs_effect > df_thr:
-        return "differential"
-    return "indeterminate"
 
 
 def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list[dict]:
@@ -432,8 +288,6 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
             row["eq_thr"],
             row["cv_mean"],
             row["cv_thr"],
-            row["effect_size"],
-            row["equivalent_fraction"],
         )
         grouped.setdefault(key, []).append(row)
 
@@ -441,27 +295,17 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
     for rows in grouped.values():
         first = rows[0]
         sei_values = np.array([row["sei"] for row in rows], dtype=np.float64)
-        success_values = np.array([row["success"] for row in rows], dtype=np.float64)
         equiv_rates = np.array([row["equiv_rate"] for row in rows], dtype=np.float64)
         ns_rates = np.array([row["ns_rate"] for row in rows], dtype=np.float64)
         diff_rates = np.array([row["diff_rate"] for row in rows], dtype=np.float64)
-        false_equiv_rates = np.array(
-            [row["false_equiv_rate"] for row in rows],
-            dtype=np.float64,
-        )
         false_diff_rates = np.array(
             [row["false_diff_rate"] for row in rows],
             dtype=np.float64,
         )
-        differential_sensitivities = np.array(
-            [row["differential_sensitivity"] for row in rows],
-            dtype=np.float64,
-        )
         excluded_rates = np.array([row["excluded_rate"] for row in rows], dtype=np.float64)
-        power = float(np.mean(success_values))
+        sei_mean = float(np.mean(sei_values))
         design_grid.append(
             {
-                "mode": config.mode,
                 "parameter": first["parameter"],
                 "value": first["value"],
                 "n_prts": first["n_prts"],
@@ -470,88 +314,27 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
                 "df_thr": first["df_thr"],
                 "cv_thr": first["cv_thr"],
                 "cv_mean": first["cv_mean"],
-                "effect_size": first.get("effect_size", 0.0),
-                "equivalent_fraction": first["equivalent_fraction"],
                 "target_sei": first["target_sei"],
                 "target_power": first["target_power"],
                 "n_iterations": first["n_iterations"],
-                "sei_mean": float(np.mean(sei_values)),
+                "sei_mean": sei_mean,
                 "sei_sd": float(np.std(sei_values, ddof=0)),
                 "sei_q05": float(np.quantile(sei_values, 0.05)),
                 "sei_q50": float(np.quantile(sei_values, 0.50)),
                 "sei_q95": float(np.quantile(sei_values, 0.95)),
-                "power": power,
-                "power_se": float(np.sqrt(power * max(1.0 - power, 0.0) / len(rows))),
+                "sei_ceiling": 1.0 - float(first["cv_mean"]),
+                "power": sei_mean,
+                "power_se": float(np.std(sei_values, ddof=0) / np.sqrt(len(rows))),
                 "equiv_rate": float(np.mean(equiv_rates)),
                 "ns_rate": float(np.mean(ns_rates)),
                 "diff_rate": float(np.mean(diff_rates)),
                 "excluded_rate": float(np.mean(excluded_rates)),
-                "false_equiv_rate": _nanmean_or_nan(false_equiv_rates),
                 "false_diff_rate": _nanmean_or_nan(false_diff_rates),
-                "differential_sensitivity": _nanmean_or_nan(differential_sensitivities),
-                "feasible": power >= config.target_power,
+                "feasible": sei_mean >= config.target_power,
             }
         )
 
     return sorted(design_grid, key=lambda row: (row["parameter"], row["value"]))
-
-
-def _summarize_calibration_metrics(
-    run_metrics: list[dict[str, Any]],
-    config: PowerConfig,
-) -> list[dict[str, float | str | int]]:
-    if config.mode != "calibration":
-        return []
-
-    grouped: dict[tuple[float, int, float, float, float], list[dict[str, Any]]] = {}
-    for row in run_metrics:
-        grouped.setdefault(
-            (
-                float(row["effect_size"]),
-                int(row["n_reps"]),
-                float(row["eq_thr"]),
-                float(row["cv_mean"]),
-                float(row["cv_thr"]),
-            ),
-            [],
-        ).append(row)
-
-    summary: list[dict[str, float | str | int]] = []
-    for (effect_size, n_reps, eq_thr, cv_mean, cv_thr), rows in sorted(grouped.items()):
-        status_prob_equiv = np.mean([row["status_prob_equiv"] for row in rows])
-        status_prob_ns = np.mean([row["status_prob_ns"] for row in rows])
-        status_prob_diff = np.mean([row["status_prob_diff"] for row in rows])
-        false_equiv_rate = _nanmean_or_nan(
-            np.array([row["false_equiv_rate"] for row in rows], dtype=np.float64)
-        )
-        differential_sensitivity = _nanmean_or_nan(
-            np.array([row["differential_sensitivity"] for row in rows], dtype=np.float64)
-        )
-        truth = str(rows[0]["truth"])
-        if abs(effect_size) < eq_thr:
-            boundary_side = "inside_equivalence"
-        elif abs(effect_size) > config.df_thr:
-            boundary_side = "outside_difference"
-        else:
-            boundary_side = "between_boundaries"
-        summary.append(
-            {
-                "effect_size": effect_size,
-                "truth": truth,
-                "status_prob_equiv": float(status_prob_equiv),
-                "status_prob_ns": float(status_prob_ns),
-                "status_prob_diff": float(status_prob_diff),
-                "false_equiv_rate": false_equiv_rate,
-                "differential_sensitivity": differential_sensitivity,
-                "boundary_side": boundary_side,
-                "eq_thr": eq_thr,
-                "df_thr": config.df_thr,
-                "n_reps": n_reps,
-                "cv_mean": cv_mean,
-                "cv_thr": cv_thr,
-            }
-        )
-    return summary
 
 
 def _solve_design_targets(design_grid: list[dict], config: PowerConfig) -> list[dict]:
@@ -563,7 +346,7 @@ def _solve_design_targets(design_grid: list[dict], config: PowerConfig) -> list[
     }
     results: list[dict] = []
 
-    axes_to_solve = [config.search_axis] if config.mode == "optimal_design" else list(search_specs)
+    axes_to_solve = list(search_specs)
 
     for axis in axes_to_solve:
         direction, objective = search_specs[axis]
@@ -571,7 +354,7 @@ def _solve_design_targets(design_grid: list[dict], config: PowerConfig) -> list[
         if not rows:
             continue
         rows = sorted(rows, key=lambda row: row[axis])
-        feasible_rows = [row for row in rows if _row_meets_constraints(row, config)]
+        feasible_rows = [row for row in rows if row["power"] >= config.target_power]
         if direction == "max":
             solution = feasible_rows[-1] if feasible_rows else None
         else:
@@ -593,8 +376,6 @@ def _solve_design_targets(design_grid: list[dict], config: PowerConfig) -> list[
                 "direction": direction,
                 "target_power": config.target_power,
                 "target_sei": config.target_sei,
-                "constraint_false_equiv_max": config.constraint_false_equiv_max,
-                "constraint_sensitivity_min": config.constraint_sensitivity_min,
                 "solution_value": None if solution is None else solution[axis],
                 "solution_found": solution is not None,
                 "reason": (
@@ -609,47 +390,16 @@ def _solve_design_targets(design_grid: list[dict], config: PowerConfig) -> list[
                 "nearest_infeasible_value": nearest_infeasible,
                 "limiting_metric_value": limiting_metric,
                 "solution_power": None if solution is None else solution["power"],
-                "solution_false_equiv_rate": None if solution is None else solution["false_equiv_rate"],
-                "solution_differential_sensitivity": None if solution is None else solution["differential_sensitivity"],
                 "fixed_parameters": {
                     "n_reps": config.n_reps,
                     "eq_thr": config.eq_thr,
                     "cv_mean": config.cv_mean,
                     "cv_thr": config.cv_thr,
-                    "equivalent_fraction": config.equivalent_fraction,
                 },
             }
         )
 
     return results
-
-
-def _dominant_truth_label(truth_labels: np.ndarray) -> str:
-    unique, counts = np.unique(truth_labels, return_counts=True)
-    return str(unique[np.argmax(counts)])
-
-
-def _default_search_effect_size(config: PowerConfig) -> float:
-    if config.equivalent_fraction >= 1.0:
-        return 0.0
-    nonzero_effects = [value for value in config.effect_size_grid if value != 0.0]
-    if not nonzero_effects:
-        return config.df_thr
-    return max(nonzero_effects, key=lambda value: abs(value))
-
-
-def _row_meets_constraints(row: dict, config: PowerConfig) -> bool:
-    if row["power"] < config.target_power:
-        return False
-    if config.constraint_false_equiv_max is not None:
-        false_equiv_rate = row.get("false_equiv_rate")
-        if false_equiv_rate != false_equiv_rate or false_equiv_rate > config.constraint_false_equiv_max:
-            return False
-    if config.constraint_sensitivity_min is not None:
-        sensitivity = row.get("differential_sensitivity")
-        if sensitivity != sensitivity or sensitivity < config.constraint_sensitivity_min:
-            return False
-    return True
 
 
 def _search_failure_reason(rows: list[dict], config: PowerConfig) -> str:
@@ -658,40 +408,23 @@ def _search_failure_reason(rows: list[dict], config: PowerConfig) -> str:
     max_power = max(row["power"] for row in rows)
     if max_power < config.target_power:
         return "no tested value met the requested target power"
-    if config.constraint_false_equiv_max is not None:
-        eligible = [
-            row
-            for row in rows
-            if row["power"] >= config.target_power and row.get("false_equiv_rate") == row.get("false_equiv_rate")
-        ]
-        if eligible and all(row["false_equiv_rate"] > config.constraint_false_equiv_max for row in eligible):
-            return "target power was reachable but false-equivalence constraint blocked all solutions"
-    if config.constraint_sensitivity_min is not None:
-        eligible = [
-            row
-            for row in rows
-            if row["power"] >= config.target_power and row.get("differential_sensitivity") == row.get("differential_sensitivity")
-        ]
-        if eligible and all(row["differential_sensitivity"] < config.constraint_sensitivity_min for row in eligible):
-            return "target power was reachable but sensitivity constraint blocked all solutions"
     return "no tested value met the requested target"
 
 
 def _check_axis_monotonicity(rows: list[dict], axis: str) -> dict[str, str | bool]:
+    powers = [row["power"] for row in rows]
     if axis in {"n_reps", "eq_thr", "cv_thr"}:
         direction = "nondecreasing"
-        powers = [row["power"] for row in rows]
         is_monotone = all(left <= right + 1e-9 for left, right in zip(powers, powers[1:], strict=False))
     else:
         direction = "nonincreasing"
-        powers = [row["power"] for row in rows]
         is_monotone = all(left + 1e-9 >= right for left, right in zip(powers, powers[1:], strict=False))
     return {"direction": direction, "is_monotone": is_monotone}
 
 
 def _collect_monotonicity_checks(design_grid: list[dict], config: PowerConfig) -> list[dict[str, str | bool]]:
     checks: list[dict[str, str | bool]] = []
-    axes = [config.search_axis] if config.mode == "optimal_design" else ["n_reps", "eq_thr", "cv_thr", "cv_mean"]
+    axes = ["n_reps", "eq_thr", "cv_thr", "cv_mean"]
     for axis in axes:
         rows = [row for row in design_grid if row["parameter"] == axis]
         if not rows:

@@ -229,7 +229,6 @@ class PowerResults:
         self.config = payload.get("config", {})
         self.design_grid = payload.get("design_grid", [])
         self.run_metrics = payload.get("run_metrics", [])
-        self.calibration_metrics = payload.get("calibration_metrics", [])
         self.search_results = payload.get("search_results", [])
         self.diagnostics = payload.get("diagnostics", {})
         self.results = self.design_grid
@@ -270,7 +269,6 @@ class PowerResults:
             "config": self.config,
             "design_grid": self.design_grid,
             "run_metrics": self.run_metrics,
-            "calibration_metrics": self.calibration_metrics,
             "search_results": self.search_results,
             "diagnostics": self.diagnostics,
         }
@@ -311,8 +309,6 @@ class PowerResults:
             "eq_thr",
             "cv_mean",
             "cv_thr",
-            "effect_size",
-            "equivalent_fraction",
         ]
         right_index = {
             tuple(row.get(key) for key in keys): row
@@ -329,8 +325,7 @@ class PowerResults:
                     **{key: row.get(key) for key in keys},
                     "delta_sei_mean": row.get("sei_mean", 0.0) - other_row.get("sei_mean", 0.0),
                     "delta_power": row.get("power", 0.0) - other_row.get("power", 0.0),
-                    "delta_false_equiv_rate": row.get("false_equiv_rate", 0.0) - other_row.get("false_equiv_rate", 0.0),
-                    "delta_differential_sensitivity": row.get("differential_sensitivity", 0.0) - other_row.get("differential_sensitivity", 0.0),
+                    "delta_false_diff_rate": row.get("false_diff_rate", 0.0) - other_row.get("false_diff_rate", 0.0),
                 }
             )
         return comparison

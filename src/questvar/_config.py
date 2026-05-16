@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from typing import Literal
+from dataclasses import dataclass, replace
 
 VALID_CORRECTIONS: set[str | None] = {
     "bonferroni",
@@ -84,12 +83,9 @@ class TestConfig(_ConfigMixin):
 
 @dataclass(frozen=True)
 class PowerConfig(_ConfigMixin):
-    mode: Literal["pure_equivalence", "calibration", "optimal_design"] = (
-        "pure_equivalence"
-    )
     n_prts: int = 5000
     n_reps: int = 5
-    cv_mean: float = 0.275
+    cv_mean: float = 0.20
     cv_k: float = 2.0
     cv_theta: float = 0.5
     eq_thr: float = 0.5
@@ -104,28 +100,14 @@ class PowerConfig(_ConfigMixin):
     target_power: float = 0.8
     eq_boundaries: tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)
     n_reps_grid: tuple[int, ...] = (3, 5, 10, 20)
-    cv_mean_grid: tuple[float, ...] = (0.15, 0.275, 0.40)
+    cv_mean_grid: tuple[float, ...] = (0.10, 0.20, 0.30)
     cv_thr_grid: tuple[float, ...] = (0.5, 1.0, 1.5)
-    effect_size_grid: tuple[float, ...] = field(
-        default_factory=lambda: (-2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0)
-    )
-    equivalent_fraction: float = 1.0
-    search_axis: Literal["n_reps", "eq_thr", "cv_thr", "cv_mean"] = "n_reps"
-    solver_objective: Literal["target_power"] = "target_power"
-    constraint_false_equiv_max: float | None = None
-    constraint_sensitivity_min: float | None = None
-    search_min_reps: int = 2
-    search_max_reps: int = 64
     random_seed: int | None = None
     n_jobs: int | None = None
 
     def __post_init__(self) -> None:
         if self.df_thr <= self.eq_thr:
             raise ValueError(f"df_thr ({self.df_thr}) must be > eq_thr ({self.eq_thr})")
-        if self.mode not in {"pure_equivalence", "calibration", "optimal_design"}:
-            raise ValueError(
-                "mode must be one of {'pure_equivalence', 'calibration', 'optimal_design'}"
-            )
         if self.cv_thr <= 0:
             raise ValueError(f"cv_thr must be > 0, got {self.cv_thr}")
         if self.n_prts < 1:
@@ -146,23 +128,6 @@ class PowerConfig(_ConfigMixin):
             raise ValueError(f"target_sei must be in (0, 1], got {self.target_sei}")
         if not 0 < self.target_power <= 1:
             raise ValueError(f"target_power must be in (0, 1], got {self.target_power}")
-        if not 0 <= self.equivalent_fraction <= 1:
-            raise ValueError(
-                f"equivalent_fraction must be in [0, 1], got {self.equivalent_fraction}"
-            )
-        if self.search_axis not in {"n_reps", "eq_thr", "cv_thr", "cv_mean"}:
-            raise ValueError("search_axis must be one of {'n_reps', 'eq_thr', 'cv_thr', 'cv_mean'}")
-        if self.solver_objective != "target_power":
-            raise ValueError("solver_objective must be 'target_power'")
-        if self.search_min_reps < 2:
-            raise ValueError(
-                f"search_min_reps must be >= 2, got {self.search_min_reps}"
-            )
-        if self.search_max_reps < self.search_min_reps:
-            raise ValueError(
-                "search_max_reps must be >= search_min_reps, got "
-                f"{self.search_max_reps} < {self.search_min_reps}"
-            )
         if self.correction not in VALID_CORRECTIONS:
             raise ValueError(
                 f"Unknown correction: {self.correction}. Valid: {VALID_CORRECTIONS}"
@@ -172,7 +137,6 @@ class PowerConfig(_ConfigMixin):
         object.__setattr__(self, "n_reps_grid", _as_int_tuple(self.n_reps_grid))
         object.__setattr__(self, "cv_mean_grid", _as_float_tuple(self.cv_mean_grid))
         object.__setattr__(self, "cv_thr_grid", _as_float_tuple(self.cv_thr_grid))
-        object.__setattr__(self, "effect_size_grid", _as_float_tuple(self.effect_size_grid))
 
         if len(self.eq_boundaries) == 0:
             raise ValueError("eq_boundaries must not be empty")
@@ -191,18 +155,6 @@ class PowerConfig(_ConfigMixin):
             raise ValueError("cv_mean_grid values must be > 0")
         if any(cv_thr <= 0 for cv_thr in self.cv_thr_grid):
             raise ValueError("cv_thr_grid values must be > 0")
-
-        if self.constraint_false_equiv_max is not None and not 0 <= self.constraint_false_equiv_max <= 1:
-            raise ValueError("constraint_false_equiv_max must be in [0, 1]")
-        if self.constraint_sensitivity_min is not None and not 0 <= self.constraint_sensitivity_min <= 1:
-            raise ValueError("constraint_sensitivity_min must be in [0, 1]")
-
-        if self.mode == "calibration" and len(self.effect_size_grid) == 0:
-            raise ValueError("effect_size_grid must not be empty in calibration mode")
-        if self.mode == "pure_equivalence" and self.equivalent_fraction != 1.0:
-            raise ValueError(
-                "equivalent_fraction must be 1.0 in pure_equivalence mode"
-            )
 
 
 def _as_float_tuple(values: tuple[float, ...] | list[float]) -> tuple[float, ...]:

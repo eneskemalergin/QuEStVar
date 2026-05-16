@@ -126,66 +126,6 @@ class TestPowerAnalysis:
         }
         assert power_by_rep[5] <= power_by_rep[20] + 0.15
 
-    def test_calibration_mode_outputs_metrics(self):
-        results = run_power_analysis(
-            mode="calibration",
-            effect_size_grid=[-1.0, 0.0, 1.0],
-            n_reps_list=[3, 5],
-            n_prts=200,
-            n_iterations=2,
-            n_jobs=1,
-        )
-        assert isinstance(results, PowerResults)
-        assert len(results.calibration_metrics) == 6
-        assert any(row["parameter"] == "effect_size" for row in results.design_grid)
-        assert results.search_results == []
-
-    def test_calibration_equivalence_peak_near_zero(self):
-        results = run_power_analysis(
-            mode="calibration",
-            effect_size_grid=[0.0, 2.0],
-            n_prts=200,
-            n_iterations=3,
-            n_jobs=1,
-        )
-        by_effect = {row["effect_size"]: row for row in results.calibration_metrics}
-        assert by_effect[0.0]["status_prob_equiv"] >= by_effect[2.0]["status_prob_equiv"]
-
-    def test_mixture_truth_model_populates_subset_metrics(self):
-        results = run_power_analysis(
-            mode="optimal_design",
-            search_axis="n_reps",
-            effect_size_grid=[2.0],
-            equivalent_fraction=0.5,
-            n_prts=200,
-            n_iterations=2,
-            search_min_reps=3,
-            search_max_reps=4,
-            n_jobs=1,
-        )
-
-        assert all(row["equivalent_fraction"] == 0.5 for row in results.design_grid)
-        assert any(row["n_equivalent_true"] == 100 for row in results.run_metrics)
-        assert any(row["n_differential_true"] == 100 for row in results.run_metrics)
-        assert any(row["false_equiv_rate"] == row["false_equiv_rate"] for row in results.design_grid)
-
-    def test_optimal_design_mode_solves_requested_axis(self):
-        results = run_power_analysis(
-            mode="optimal_design",
-            search_axis="n_reps",
-            search_min_reps=3,
-            search_max_reps=6,
-            n_prts=200,
-            n_iterations=2,
-            n_jobs=1,
-        )
-
-        assert {row["parameter"] for row in results.design_grid} == {"n_reps"}
-        solution = results.optimal_design("n_reps")
-        assert solution is not None
-        assert solution["search_for"] == "n_reps"
-        assert solution["solution_found"] in {True, False}
-
     def test_random_seed_makes_power_results_deterministic(self):
         kwargs = dict(
             eq_boundaries=[0.3, 0.5],
