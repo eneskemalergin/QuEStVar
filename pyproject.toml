@@ -15,6 +15,7 @@ requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.0",
     "polars>=1.0",
+    "scipy>=1.10",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,11 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "ARG"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_benchmark.py" = ["E501"]
+"tests/test_speed.py" = ["E501"]
+"tests/test_io_benchmark.py" = ["E501", "F841"]
 
 [tool.ruff.format]
 quote-style = "double"

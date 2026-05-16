@@ -902,6 +902,7 @@ source = { editable = "." }
 dependencies = [
     { name = "numpy" },
     { name = "polars" },
+    { name = "scipy" },
 ]
 
 [package.optional-dependencies]
@@ -943,6 +944,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.0" },
     { name = "pyyaml", marker = "extra == 'yaml'", specifier = ">=6.0" },
     { name = "questvar", extras = ["plots", "yaml", "cli", "accel"], marker = "extra == 'all'" },
+    { name = "scipy", specifier = ">=1.10" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.9" },
 ]
 provides-extras = ["plots", "yaml", "cli", "accel", "all"]

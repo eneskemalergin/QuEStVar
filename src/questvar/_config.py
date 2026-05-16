@@ -56,7 +56,8 @@ class _ConfigMixin:
 
 
 @dataclass(frozen=True)
-class TestConfig(_ConfigMixin):
+class TestConfig(_ConfigMixin):  # noqa: PytestCollectionWarning
+    __test__ = False
     cv_thr: float = 0.15
     p_thr: float = 0.05
     df_thr: float = 1.0
