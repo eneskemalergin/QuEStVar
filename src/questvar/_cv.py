@@ -11,8 +11,12 @@ def cv_numpy(
     axis: int = 1,
     ddof: int = 1,
     ignore_nan: bool = False,
-    format: str = "ratio",
 ) -> NDArray[np.float64]:
+    """Compute coefficient of variation as a ratio (std / mean).
+
+    Always returns ratios (e.g. 0.15 for 15% CV). Use cv_thr in the same
+    ratio unit when comparing against a threshold.
+    """
     x = np.asarray(x, dtype=np.float64)
 
     if ignore_nan:
@@ -24,11 +28,7 @@ def cv_numpy(
         mean = np.mean(x, axis=axis)
         std = np.std(x, axis=axis, ddof=ddof)
 
-    cv = np.divide(std, mean, out=np.full_like(mean, np.nan), where=mean != 0)
-
-    if format == "percent":
-        return cv * 100.0
-    return cv
+    return np.divide(std, mean, out=np.full_like(mean, np.nan), where=mean != 0)
 
 
 def make_selection_indicator(

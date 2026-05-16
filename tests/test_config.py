@@ -91,7 +91,7 @@ class TestPowerConfig:
         assert cfg.target_power == 0.8
         assert cfg.eq_boundaries == (0.1, 0.3, 0.5, 0.7, 0.9)
         assert cfg.n_reps_grid == (3, 5, 10, 20)
-        assert cfg.cv_mean_grid == (15.0, 27.5, 40.0)
+        assert cfg.cv_mean_grid == (0.15, 0.275, 0.4)
 
     def test_validation(self):
         with pytest.raises(ValueError, match="df_thr.*must be > eq_thr"):
@@ -111,13 +111,13 @@ class TestPowerConfig:
         cfg = PowerConfig(
             eq_boundaries=[0.2, 0.4],
             n_reps_grid=[4, 8],
-            cv_mean_grid=[20, 30],
+            cv_mean_grid=[0.20, 0.30],
             cv_thr_grid=[0.1, 0.2],
             effect_size_grid=[-1, 0, 1],
         )
         assert cfg.eq_boundaries == (0.2, 0.4)
         assert cfg.n_reps_grid == (4, 8)
-        assert cfg.cv_mean_grid == (20.0, 30.0)
+        assert cfg.cv_mean_grid == (0.20, 0.30)
         assert cfg.cv_thr_grid == (0.1, 0.2)
         assert cfg.effect_size_grid == (-1.0, 0.0, 1.0)
 
@@ -144,10 +144,10 @@ class TestPowerConfig:
 
     def test_from_dict(self):
         cfg = PowerConfig.from_dict(
-            {"n_prts": 1000, "cv_mean": 30.0, "mode": "optimal_design"}
+            {"n_prts": 1000, "cv_mean": 0.30, "mode": "optimal_design"}
         )
         assert cfg.n_prts == 1000
-        assert cfg.cv_mean == 30.0
+        assert cfg.cv_mean == 0.30
         assert cfg.mode == "optimal_design"
 
     def test_to_yaml(self, tmp_path: Path):

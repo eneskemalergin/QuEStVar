@@ -11,15 +11,14 @@ class TestCvNumpy:
     def test_vs_scipy(self):
         rng = np.random.default_rng(42)
         x = rng.normal(10, 2, (100, 5))
-        expected = sp_variation(x, axis=1, ddof=1) * 100
-        actual = cv_numpy(x, axis=1, format="percent")
+        expected = sp_variation(x, axis=1, ddof=1)
+        actual = cv_numpy(x, axis=1)
         assert_allclose(actual, expected, rtol=1e-14)
 
-    def test_ratio_format(self):
+    def test_ratio_only(self):
         x = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-        actual_ratio = cv_numpy(x, format="ratio")
-        actual_pct = cv_numpy(x, format="percent")
-        assert_allclose(actual_ratio * 100, actual_pct)
+        cv = cv_numpy(x)
+        assert np.all(cv < 1.0), "CV should be ratio < 1 for these inputs"
 
     def test_with_nan(self):
         x = np.array([[1.0, 2.0, np.nan], [4.0, 5.0, 6.0]])

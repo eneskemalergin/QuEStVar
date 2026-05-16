@@ -10,12 +10,15 @@ def simulate_data(
     int_mu: float = 18.0,
     int_sd: float = 1.0,
     int_log2: bool = True,
-    cv_mu: float = 27.5,
+    cv_mu: float = 0.275,
     cv_k: float = 2.0,
     cv_theta: float = 0.5,
-    cv_pct: bool = True,
     seed: int | None = None,
 ) -> NDArray[np.float64]:
+    """Simulate log-normal proteomics data.
+
+    cv_mu is the target mean CV as a **ratio** (e.g. 0.275 for 27.5%).
+    """
     if seed is not None:
         np.random.seed(seed)
 
@@ -27,8 +30,6 @@ def simulate_data(
     cv_dist = np.random.gamma(cv_k, cv_theta, n_prts)
     cv_dist = cv_dist * cv_mu / np.mean(cv_dist)
     cv_dist = cv_dist - np.min(cv_dist) + 1.0
-    if cv_pct:
-        cv_dist = cv_dist / 100.0
     cv_dist = cv_dist[:, np.newaxis]
 
     if np.any(mean_dist == 0):

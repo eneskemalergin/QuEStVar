@@ -89,7 +89,7 @@ class PowerConfig(_ConfigMixin):
     )
     n_prts: int = 5000
     n_reps: int = 5
-    cv_mean: float = 27.5
+    cv_mean: float = 0.275
     cv_k: float = 2.0
     cv_theta: float = 0.5
     eq_thr: float = 0.5
@@ -104,7 +104,7 @@ class PowerConfig(_ConfigMixin):
     target_power: float = 0.8
     eq_boundaries: tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)
     n_reps_grid: tuple[int, ...] = (3, 5, 10, 20)
-    cv_mean_grid: tuple[float, ...] = (15.0, 27.5, 40.0)
+    cv_mean_grid: tuple[float, ...] = (0.15, 0.275, 0.40)
     cv_thr_grid: tuple[float, ...] = (0.05, 0.1, 0.15, 0.2, 0.3)
     effect_size_grid: tuple[float, ...] = field(
         default_factory=lambda: (-2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0)
@@ -132,8 +132,8 @@ class PowerConfig(_ConfigMixin):
             raise ValueError(f"n_prts must be >= 1, got {self.n_prts}")
         if self.n_reps < 2:
             raise ValueError(f"n_reps must be >= 2, got {self.n_reps}")
-        if self.cv_mean <= 0:
-            raise ValueError(f"cv_mean must be > 0, got {self.cv_mean}")
+        if not 0 < self.cv_mean < 2:
+            raise ValueError(f"cv_mean must be a ratio in (0, 2), got {self.cv_mean}")
         if self.cv_k <= 0:
             raise ValueError(f"cv_k must be > 0, got {self.cv_k}")
         if self.cv_theta <= 0:

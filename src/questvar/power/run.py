@@ -48,7 +48,7 @@ def run_power_analysis(
         mode=mode,
         n_prts=n_prts,
         n_reps=n_reps_list[0] if n_reps_list else 5,
-        cv_mean=cv_mean_list[0] if cv_mean_list else 27.5,
+        cv_mean=cv_mean_list[0] if cv_mean_list else 0.275,
         eq_thr=float(eq_boundaries[0]) if eq_boundaries is not None else 0.5,
         p_thr=p_thr,
         df_thr=df_thr,
@@ -59,7 +59,7 @@ def run_power_analysis(
         target_power=target_power,
         eq_boundaries=tuple(eq_boundaries) if eq_boundaries is not None else (0.1, 0.3, 0.5, 0.7, 0.9),
         n_reps_grid=tuple(n_reps_list) if n_reps_list is not None else (3, 5, 10, 20),
-        cv_mean_grid=tuple(cv_mean_list) if cv_mean_list is not None else (15.0, 27.5, 40.0),
+        cv_mean_grid=tuple(cv_mean_list) if cv_mean_list is not None else (0.15, 0.275, 0.40),
         cv_thr_grid=tuple(cv_thr_list) if cv_thr_list is not None else (cv_thr,),
         effect_size_grid=(
             tuple(effect_size_grid)
@@ -143,7 +143,6 @@ def _simulate_one(task: tuple, config: dict) -> dict:
         cv_mu=float(point["cv_mean"]),
         cv_k=cfg.cv_k,
         cv_theta=cfg.cv_theta,
-        cv_pct=True,
         seed=run_id if cfg.random_seed is None else cfg.random_seed + run_id,
     )
     effect_size = float(point.get("effect_size", 0.0))

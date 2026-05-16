@@ -39,7 +39,7 @@ class TestPowerAnalysis:
         results = run_power_analysis(
             eq_boundaries=np.array([0.3, 0.5]),
             n_reps_list=[5],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,
@@ -52,7 +52,7 @@ class TestPowerAnalysis:
         results = run_power_analysis(
             eq_boundaries=np.array([0.5]),
             n_reps_list=[5],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,
@@ -74,7 +74,7 @@ class TestPowerAnalysis:
         results = run_power_analysis(
             eq_boundaries=np.array([0.5]),
             n_reps_list=[5],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,
@@ -87,7 +87,7 @@ class TestPowerAnalysis:
         results = run_power_analysis(
             eq_boundaries=np.array([0.5]),
             n_reps_list=[5, 20],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,
@@ -100,7 +100,7 @@ class TestPowerAnalysis:
             eq_boundaries=np.array([0.3, 0.5]),
             n_reps_list=[5, 10],
             cv_thr_list=[0.1, 0.15],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,
@@ -114,7 +114,7 @@ class TestPowerAnalysis:
         results = run_power_analysis(
             eq_boundaries=np.array([0.5]),
             n_reps_list=[5, 20],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=3,
             n_jobs=1,
@@ -190,7 +190,7 @@ class TestPowerAnalysis:
         kwargs = dict(
             eq_boundaries=[0.3, 0.5],
             n_reps_list=[4, 6],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=3,
             n_jobs=1,
@@ -223,7 +223,7 @@ class TestPowerAnalysis:
         base = run_power_analysis(
             eq_boundaries=[0.5],
             n_reps_list=[4],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,
@@ -232,7 +232,7 @@ class TestPowerAnalysis:
         alt = run_power_analysis(
             eq_boundaries=[0.5],
             n_reps_list=[6],
-            cv_mean_list=[20],
+            cv_mean_list=[0.20],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,

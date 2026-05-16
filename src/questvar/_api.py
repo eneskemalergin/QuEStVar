@@ -54,8 +54,8 @@ class QuestVar:
             config.cv_thr,
         )
 
-        s1_cv = cv_numpy(s1_arr, ignore_nan=config.allow_missing, format="ratio")
-        s2_cv = cv_numpy(s2_arr, ignore_nan=config.allow_missing, format="ratio")
+        s1_cv = cv_numpy(s1_arr, ignore_nan=config.allow_missing)
+        s2_cv = cv_numpy(s2_arr, ignore_nan=config.allow_missing)
         s1_ps = make_selection_indicator(s1_cv, config.cv_thr)
         s2_ps = make_selection_indicator(s2_cv, config.cv_thr)
         keep = (s1_ps >= 0) & (s2_ps >= 0)
