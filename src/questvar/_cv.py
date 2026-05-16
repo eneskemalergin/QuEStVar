@@ -11,7 +11,7 @@ def cv_numpy(
     axis: int = 1,
     ddof: int = 1,
     ignore_nan: bool = False,
-    format: str = "percent",
+    format: str = "ratio",
 ) -> NDArray[np.float64]:
     x = np.asarray(x, dtype=np.float64)
 

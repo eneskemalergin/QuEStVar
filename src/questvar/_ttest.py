@@ -268,21 +268,6 @@ def run_paired(
     )
 
 
-def _ttest_ind_from_rel(
-    d: NDArray[np.float64],
-    n: NDArray[np.float64],
-    alternative: str = "two-sided",
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    mean = np.nanmean(d, axis=1)
-    var = np.nanvar(d, axis=1, ddof=1)
-    se = np.sqrt(var / n)
-    same = mean == 0
-    t_stat = np.where(same, 0.0, mean / se)
-    df = n - 1.0
-    p_val = _pvalue_from_t(t_stat, df, alternative)
-    return t_stat, p_val, df
-
-
 def _log10_safe(p: NDArray[np.float64]) -> NDArray[np.float64]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)

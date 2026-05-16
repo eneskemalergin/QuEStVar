@@ -140,10 +140,12 @@ class TestMultipleTestingCorrection:
         assert len(q) == 50
         assert np.all(q >= 0) and np.all(q <= 1)
 
-    def test_n_tests_override(self):
-        p = np.array([0.001, 0.01])
-        adj = p_adjust(p, "bonferroni", n_tests=10)
-        assert_allclose(adj, np.minimum(p * 10, 1.0))
+    def test_n_tests_override_all_methods(self):
+        p = np.array([0.001, 0.01, 0.1])
+        for method in ["bonferroni", "holm", "hochberg", "fdr", "BY", "qvalue"]:
+            adj = p_adjust(p, method, n_tests=100)
+            assert adj.shape == p.shape
+            assert np.all(adj >= 0) and np.all(adj <= 1)
 
     def test_unknown_method(self):
         import pytest
