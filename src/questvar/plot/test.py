@@ -92,6 +92,7 @@ def plot_summary(
     -------
     matplotlib.figure.Figure
         Convenience axes attributes are attached before returning:
+        ``fig.ax_df_hist``, ``fig.ax_eq_hist``, ``fig.ax_pval_scatter``,
         ``fig.ax_antlers``, ``fig.ax_ma``, ``fig.ax_counts``,
         ``fig.ax_matrix``, ``fig.ax_hexbin``, ``fig.ax_legend``.
     """
@@ -168,11 +169,14 @@ def plot_summary(
     # Status counts (tested proteins + excluded from info)
     # ------------------------------------------------------------------
     n_excluded = int(np.sum((s1_cv == -1) | (s2_cv == -1)))
+    # Derive counts directly from integer status codes - single pass per condition
     status_counts: dict[str, int] = {
-        s: int(np.sum(status_str == s))
-        for s in ["Equivalent", "Upregulated", "Downregulated", "Unexplained"]
+        "Equivalent":    int(np.sum(status_int == 1)),
+        "Upregulated":   int(np.sum((status_int == -1) & (log2fc > 0))),
+        "Downregulated": int(np.sum((status_int == -1) & (log2fc <= 0))),
+        "Unexplained":   int(np.sum(status_int == 0)),
+        "Excluded":      n_excluded,
     }
-    status_counts["Excluded"] = n_excluded
     n_total = len(data)
 
     status_colors = pc.status_colors
@@ -183,7 +187,7 @@ def plot_summary(
     _subtitle_kw = dict(
         fontsize=title_fontsize - 4,
         fontstyle="italic",
-        color="black",
+        color=pc.title_color,
         pad=5,
     )
     _ax_label_kw = dict(
@@ -204,31 +208,37 @@ def plot_summary(
         labelspacing=0.3,
         borderpad=0.6,
     )
-    _grid_kw = dict(alpha=0.3, linestyle="--", linewidth=0.5, color="lightgray")
+    # Grid: keep alpha lighter than the power plot (dense scatter needs breathing room)
+    _grid_kw = dict(
+        alpha=0.3,
+        linestyle=pc.grid_linestyle,
+        linewidth=pc.grid_linewidth,
+        color=pc.grid_color,
+    )
     _box_kw = dict(
         boxstyle="round,pad=0.5",
-        facecolor="#f8f9fa",
+        facecolor=pc.annotation_box_facecolor,
         alpha=0.9,
-        edgecolor="#343a40",
+        edgecolor=pc.annotation_box_edgecolor,
         linewidth=1,
     )
 
-    # Threshold line styles
-    _eq_col = "#457B9D"
-    _df_col = "#bc4749"
-    _eq_ls  = "--"
-    _df_ls  = ":"
-    _thr_lw = 2
+    # Threshold line styles - sourced from PlotConfig for consistent visual language
+    _eq_col = pc.eq_threshold_color
+    _df_col = pc.df_threshold_color
+    _eq_ls  = pc.eq_threshold_linestyle
+    _df_ls  = pc.df_threshold_linestyle
+    _thr_lw = pc.threshold_linewidth
 
     def _letter(ax, letter: str) -> None:
         ax.text(
-            0.02, 1.0, letter,
+            0.02, 0.97, letter,
             transform=ax.transAxes,
             fontsize=title_fontsize,
             fontweight="bold",
             color="black",
             ha="center",
-            va="center",
+            va="top",
             bbox=dict(
                 boxstyle="round,pad=0.3",
                 facecolor="white",
@@ -236,9 +246,6 @@ def plot_summary(
                 linewidth=1,
             ),
         )
-
-    def _sc_colors(labels: np.ndarray) -> list[str]:
-        return [status_colors.get(str(s), "#cccccc") for s in labels]
 
     scatter_order = ["Excluded", "Unexplained", "Downregulated", "Upregulated", "Equivalent"]
     if not show_excluded:
@@ -328,14 +335,18 @@ def plot_summary(
     _letter(ax_c, "C")
 
     valid_c = ~(np.isnan(df_adjp) | np.isnan(eq_adjp_arr))
-    if valid_c.sum() > 0:
-        ax_c.scatter(
-            df_adjp[valid_c], eq_adjp_arr[valid_c],
-            c=_sc_colors(status_str[valid_c]),
-            s=25, alpha=0.7,
-            edgecolor="white", linewidth=0.3,
-            rasterized=rasterize_scatters,
-        )
+    for st in scatter_order:
+        if st == "Excluded":
+            continue
+        mask_c = valid_c & (status_str == st)
+        if mask_c.sum() > 0:
+            ax_c.scatter(
+                df_adjp[mask_c], eq_adjp_arr[mask_c],
+                c=status_colors.get(st, "#cccccc"),
+                s=25, alpha=0.7,
+                edgecolor="white", linewidth=0.3,
+                rasterized=rasterize_scatters, zorder=5,
+            )
     ax_c.axhline(y=p_thr, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
     ax_c.axvline(x=p_thr, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
     ax_c.set_xlabel("Difference Test\nAdjusted P-value", **_ax_label_kw)
@@ -343,7 +354,7 @@ def plot_summary(
     ax_c.set_xscale("log")
     ax_c.set_yscale("log")
     ax_c.grid(True, **_grid_kw)
-    ax_c.set_title("Comparison", **_subtitle_kw)
+    ax_c.set_title("Adj. P-value\nComparison", **_subtitle_kw)
     ax_c.tick_params(**_tick_kw)
 
     # ------------------------------------------------------------------
@@ -460,7 +471,6 @@ def plot_summary(
     )
     ax_f.set_yticks(y_pos)
     ax_f.set_yticklabels(bar_order)
-    ax_f.tick_params(axis="y", labelsize=_tick_kw["labelsize"], pad=_tick_kw["pad"])
     ax_f.set_xlabel("Count", **_ax_label_kw)
 
     max_count = max(bar_counts) if bar_counts else 1
@@ -484,17 +494,14 @@ def plot_summary(
     ax_g = fig.add_subplot(gs[2, 2])
     _letter(ax_g, "G")
 
-    _cv_map = {-1: "Filtered", 0: "Missing", 1: "Retained"}
-    s1_lbl = np.array([_cv_map.get(int(v), "Missing") for v in s1_cv])
-    s2_lbl = np.array([_cv_map.get(int(v), "Missing") for v in s2_cv])
     cats = ["Retained", "Missing", "Filtered"]
-
+    # Map cv status codes to matrix indices via: 1->0, 0->1, -1->2  (i.e. 1 - code)
+    s1_idx = np.clip(1 - s1_cv, 0, 2)
+    s2_idx = np.clip(1 - s2_cv, 0, 2)
     matrix = np.zeros((3, 3), dtype=int)
-    for ri, rc in enumerate(cats):
-        for ci, cc in enumerate(cats):
-            matrix[ri, ci] = int(np.sum((s1_lbl == rc) & (s2_lbl == cc)))
+    np.add.at(matrix, (s1_idx, s2_idx), 1)
 
-    ax_g.imshow(matrix, cmap="Greys", aspect="auto", alpha=0.8)
+    ax_g.imshow(matrix, cmap=pc.count_cmap, aspect="auto", alpha=0.8)
     max_val = int(matrix.max()) or 1
     for ri in range(3):
         for ci in range(3):
@@ -519,7 +526,9 @@ def plot_summary(
         spine.set_visible(False)
 
     # ------------------------------------------------------------------
-    # Panel H: sample size hexbin
+    # Panel H: sample size comparison
+    # - allow_missing=True  -> per-protein n1/n2 vary -> hexbin density
+    # - allow_missing=False -> all proteins share the same n1/n2 -> annotated summary
     # ------------------------------------------------------------------
     ax_h = fig.add_subplot(gs[2, 3])
     _letter(ax_h, "H")
@@ -529,24 +538,49 @@ def plot_summary(
     n2_v = n2_arr[valid_n]
 
     if len(n1_v) > 0 and len(n2_v) > 0:
-        max_bins = max(min(20, len(np.unique(n1_v)), len(np.unique(n2_v))), 2)
-        hb = ax_h.hexbin(
-            n1_v, n2_v,
-            gridsize=max_bins, cmap="Greys",
-            mincnt=1, linewidths=0.3, alpha=0.85,
-            rasterized=True,
-        )
-        cb = fig.colorbar(hb, ax=ax_h, shrink=0.7, pad=0.04)
-        cb.set_label("Count", fontsize=_tick_kw["labelsize"])
-        cb.ax.tick_params(labelsize=_tick_kw["labelsize"])
-        ax_h.set_xlim(0, int(n1_v.max()) + 1)
-        ax_h.set_ylim(0, int(n2_v.max()) + 1)
+        n1_unique = np.unique(n1_v.astype(int))
+        n2_unique = np.unique(n2_v.astype(int))
+        if len(n1_unique) > 1 or len(n2_unique) > 1:
+            # Variable per-protein sample sizes: hexbin density plot
+            max_bins = max(min(20, len(n1_unique), len(n2_unique)), 2)
+            hb = ax_h.hexbin(
+                n1_v, n2_v,
+                gridsize=max_bins, cmap=pc.count_cmap,
+                mincnt=1, linewidths=0.3, alpha=0.85,
+                rasterized=True,
+            )
+            cb = fig.colorbar(hb, ax=ax_h, shrink=0.7, pad=0.04)
+            cb.set_label("Count", fontsize=_tick_kw["labelsize"])
+            cb.ax.tick_params(labelsize=_tick_kw["labelsize"])
+            ax_h.set_xlim(0, n1_unique.max() + 1)
+            ax_h.set_ylim(0, n2_unique.max() + 1)
+            ax_h.set_xlabel(f"N\u2081 ({c1} Samples)", **_ax_label_kw)
+            ax_h.set_ylabel(f"N\u2082 ({c2} Samples)", **_ax_label_kw)
+            ax_h.grid(True, **_grid_kw)
+            ax_h.tick_params(**_tick_kw)
+        else:
+            # Fixed sample sizes: annotated summary avoids a degenerate single-cell hexbin
+            n1_val = int(n1_unique[0])
+            n2_val = int(n2_unique[0])
+            ax_h.text(
+                0.5, 0.62,
+                f"{c1}\nN\u2081 = {n1_val}",
+                transform=ax_h.transAxes,
+                fontsize=title_fontsize - 2,
+                ha="center", va="center", fontweight="bold",
+                color=pc.title_color,
+            )
+            ax_h.text(
+                0.5, 0.30,
+                f"{c2}\nN\u2082 = {n2_val}",
+                transform=ax_h.transAxes,
+                fontsize=title_fontsize - 2,
+                ha="center", va="center", fontweight="bold",
+                color=pc.title_color,
+            )
+            ax_h.axis("off")
 
-    ax_h.set_xlabel(f"N1 ({c1} Samples)", **_ax_label_kw)
-    ax_h.set_ylabel(f"N2 ({c2} Samples)", **_ax_label_kw)
     ax_h.set_title("Sample Size\nComparison", **_subtitle_kw)
-    ax_h.grid(True, **_grid_kw)
-    ax_h.tick_params(**_tick_kw)
 
     # ------------------------------------------------------------------
     # Legend panel (column 5, row 2)
@@ -611,8 +645,8 @@ def plot_summary(
     ax_left.axis("off")
     ax_right.axis("off")
 
-    N1_max = int(n1_arr[~np.isnan(n1_arr)].max()) if (~np.isnan(n1_arr)).any() else 0
-    N2_max = int(n2_arr[~np.isnan(n2_arr)].max()) if (~np.isnan(n2_arr)).any() else 0
+    N1_nom = len(results.cond_1)
+    N2_nom = len(results.cond_2)
 
     text_left = (
         r"$\mathbf{STATISTICAL\ TESTING\ METHODOLOGY}$" + "\n\n"
@@ -624,7 +658,7 @@ def plot_summary(
         + rf"$\mathbf{{Multiple\ Testing}}$: {correction} correction applied" + "\n"
         + rf"$\mathbf{{Significance\ Level}}$: $\alpha = {p_thr:.3f}$" + "\n\n"
         + rf"$\mathbf{{Data\ Summary}}$: {n_total:,} features analyzed" + "\n"
-        + rf"{c1}: {N1_max} samples   {c2}: {N2_max} samples"
+        + rf"{c1}: {N1_nom} samples   {c2}: {N2_nom} samples"
     )
     text_right = (
         r"$\mathbf{FIGURE\ PANEL\ DESCRIPTION}$" + "\n\n"
@@ -635,7 +669,7 @@ def plot_summary(
         + r"$\mathbf{E)}$ MA Plot: Mean expression vs log fold change with threshold regions" + "\n"
         + r"$\mathbf{F)}$ Category Distribution: Feature counts per testing outcome" + "\n"
         + r"$\mathbf{G)}$ Exclusion Matrix: CV filter status cross-tabulation by condition" + "\n"
-        + r"$\mathbf{H)}$ Sample Size Comparison: Hexagonal binning of per-condition sample sizes"
+        + r"$\mathbf{H)}$ Sample Size: Per-protein hexbin density (variable N) or fixed N per condition"
     )
 
     ax_left.text(
@@ -654,7 +688,7 @@ def plot_summary(
     # ------------------------------------------------------------------
     # Main title
     # ------------------------------------------------------------------
-    title_str = "QuEStVar Testing Summary: Equivalence and Difference Testing"
+    title_str = f"QuEStVar Summary: {c1} vs {c2}"
     if title_add:
         title_str += f"\n{title_add}"
     fig.suptitle(
@@ -681,12 +715,15 @@ def plot_summary(
         plt.show()
 
     # Convenience axes attributes
-    fig.ax_antlers = ax_d    # type: ignore[attr-defined]
-    fig.ax_ma      = ax_e    # type: ignore[attr-defined]
-    fig.ax_counts  = ax_f    # type: ignore[attr-defined]
-    fig.ax_matrix  = ax_g    # type: ignore[attr-defined]
-    fig.ax_hexbin  = ax_h    # type: ignore[attr-defined]
-    fig.ax_legend  = ax_lgd  # type: ignore[attr-defined]
+    fig.ax_df_hist      = ax_a    # type: ignore[attr-defined]
+    fig.ax_eq_hist      = ax_b    # type: ignore[attr-defined]
+    fig.ax_pval_scatter = ax_c    # type: ignore[attr-defined]
+    fig.ax_antlers      = ax_d    # type: ignore[attr-defined]
+    fig.ax_ma           = ax_e    # type: ignore[attr-defined]
+    fig.ax_counts       = ax_f    # type: ignore[attr-defined]
+    fig.ax_matrix       = ax_g    # type: ignore[attr-defined]
+    fig.ax_hexbin       = ax_h    # type: ignore[attr-defined]
+    fig.ax_legend       = ax_lgd  # type: ignore[attr-defined]
 
     return fig
 

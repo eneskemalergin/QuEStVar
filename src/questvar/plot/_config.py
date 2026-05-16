@@ -136,6 +136,25 @@ class PlotConfig:
     ideal_label: str = "ideal (SEI = 1)"
 
     # ------------------------------------------------------------------
+    # Threshold lines for equivalence / difference testing
+    # (shared visual language across Antler's plot, MA plot, etc.)
+    # ------------------------------------------------------------------
+    eq_threshold_color: str = "#457B9D"
+    """Colour for equivalence threshold lines (blue family)."""
+    eq_threshold_linestyle: str = "--"
+    df_threshold_color: str = "#bc4749"
+    """Colour for difference threshold lines (red family)."""
+    df_threshold_linestyle: str = ":"
+    threshold_linewidth: float = 2.0
+    """Stroke width applied to all equivalence/difference threshold lines."""
+
+    # ------------------------------------------------------------------
+    # Annotation box (bottom text panels in summary plot)
+    # ------------------------------------------------------------------
+    annotation_box_facecolor: str = "#f8f9fa"
+    annotation_box_edgecolor: str = "#343a40"
+
+    # ------------------------------------------------------------------
     # Colour palette (lines drawn in palette order, jco-inspired)
     # ------------------------------------------------------------------
     palette: list[str] = field(
@@ -194,6 +213,9 @@ class PlotConfig:
 
     multi_line_cmap: str = "Blues"
     """Sequential colormap used when multiple n_reps lines are drawn in the power plot."""
+
+    count_cmap: str = "Greys"
+    """Colormap for count-based panels: exclusion matrix (G) and sample size hexbin (H)."""
 
     # ------------------------------------------------------------------
     # Layout - width ratios for the GridSpec panels
