@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.testing import assert_allclose
 
-from questvar._correction import multiple_testing_correction
+from questvar._correction import p_adjust
 
 
 def _fdr_bh_ref(p, n):
@@ -28,98 +28,125 @@ def _holm_ref(p, n):
 class TestMultipleTestingCorrection:
     def test_none_passthrough(self):
         p = np.array([0.001, 0.01, 0.1])
-        assert_allclose(multiple_testing_correction(p, None), p)
+        assert_allclose(p_adjust(p, None), p)
 
     def test_bonferroni(self):
         p = np.array([0.001, 0.01, 0.03, 0.05, 0.5, 0.8])
         expected = np.minimum(p * len(p), 1.0)
-        assert_allclose(multiple_testing_correction(p, "bonferroni"), expected)
+        assert_allclose(p_adjust(p, "bonferroni"), expected)
 
     def test_holm(self):
         p = np.array([0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8])
         expected = _holm_ref(p, len(p))
-        assert_allclose(multiple_testing_correction(p, "holm"), expected)
+        assert_allclose(p_adjust(p, "holm"), expected)
 
     def test_fdr_bh(self):
         p = np.array([0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8])
         expected = _fdr_bh_ref(p, len(p))
-        assert_allclose(multiple_testing_correction(p, "fdr"), expected)
-        assert_allclose(multiple_testing_correction(p, "fdr_bh"), expected)
+        assert_allclose(p_adjust(p, "fdr"), expected)
+        assert_allclose(p_adjust(p, "fdr_bh"), expected)
 
     def test_bonferroni_r_reference(self):
         # R: p.adjust(c(0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8), "bonferroni")
         # 0.008 0.080 0.240 0.400 0.800 1.000 1.000 1.000
         p = np.array([0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8])
         r_ref = np.array([0.008, 0.080, 0.240, 0.400, 0.800, 1.000, 1.000, 1.000])
-        assert_allclose(multiple_testing_correction(p, "bonferroni"), r_ref, atol=1e-6)
+        assert_allclose(p_adjust(p, "bonferroni"), r_ref, atol=1e-6)
 
     def test_holm_r_reference(self):
         # R: p.adjust(c(0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8), "holm")
         # 0.008 0.070 0.180 0.250 0.400 0.600 1.000 1.000
         p = np.array([0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8])
         r_ref = np.array([0.008, 0.070, 0.180, 0.250, 0.400, 0.600, 1.000, 1.000])
-        assert_allclose(multiple_testing_correction(p, "holm"), r_ref, atol=1e-6)
+        assert_allclose(p_adjust(p, "holm"), r_ref, atol=1e-6)
 
     def test_fdr_bh_r_reference(self):
-        # R: p.adjust(c(0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8), "fdr")
+        # R: p.adjust(c(0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8), "BH")
         # 0.008, 0.040, 0.080, 0.100, 0.160, 0.267, 0.571, 0.800
         p = np.array([0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8])
-        r_ref = np.array([0.008, 0.04, 0.08, 0.1, 0.16, 0.2666667, 0.5714286, 0.8])
-        assert_allclose(multiple_testing_correction(p, "fdr"), r_ref, atol=1e-6)
-        assert_allclose(multiple_testing_correction(p, "fdr_bh"), r_ref, atol=1e-6)
+        r_ref = np.array(
+            [0.008, 0.04, 0.08, 0.1, 0.16, 0.266666666666667, 0.571428571428571, 0.8]
+        )
+        assert_allclose(p_adjust(p, "fdr"), r_ref)
+        assert_allclose(p_adjust(p, "fdr_bh"), r_ref)
+
+    def test_hochberg_r_reference(self):
+        # R: p.adjust(c(0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8), "hochberg")
+        # 0.008, 0.070, 0.180, 0.250, 0.400, 0.600, 0.800, 0.800
+        p = np.array([0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8])
+        r_ref = np.array([0.008, 0.07, 0.18, 0.25, 0.4, 0.6, 0.8, 0.8])
+        assert_allclose(p_adjust(p, "hochberg"), r_ref)
+
+    def test_by_r_reference(self):
+        # R: p.adjust(c(0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8), "BY")
+        # 0.02174286, 0.10871429, 0.21742857, 0.27178571, 0.43485714, 0.72476190, 1.0, 1.0
+        p = np.array([0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8])
+        r_ref = np.array(
+            [
+                0.02174286,
+                0.10871429,
+                0.21742857,
+                0.27178571,
+                0.43485714,
+                0.72476190,
+                1.0,
+                1.0,
+            ]
+        )
+        assert_allclose(p_adjust(p, "BY"), r_ref, atol=1e-6)
 
     def test_bh_monotonicity(self):
         rng = np.random.default_rng(42)
         for _ in range(20):
             p = rng.uniform(0, 1, 100)
-            adj = multiple_testing_correction(p, "fdr")
+            adj = p_adjust(p, "fdr")
             order = np.argsort(p)
             assert np.all(np.diff(adj[order]) >= -1e-15)
 
     def test_bonferroni_monotonicity(self):
         p = np.array([0.001, 0.01, 0.03, 0.05, 0.1, 0.2, 0.5, 0.8])
-        adj = multiple_testing_correction(p, "bonferroni")
+        adj = p_adjust(p, "bonferroni")
         order = np.argsort(p)
         assert np.all(np.diff(adj[order]) >= -1e-15)
 
     def test_empty(self):
         p = np.array([])
-        assert len(multiple_testing_correction(p, "bonferroni")) == 0
+        assert len(p_adjust(p, "bonferroni")) == 0
 
     def test_single(self):
         p = np.array([0.01])
-        assert_allclose(multiple_testing_correction(p, "bonferroni"), [0.01])
-        assert_allclose(multiple_testing_correction(p, "fdr"), [0.01])
+        assert_allclose(p_adjust(p, "bonferroni"), [0.01])
+        assert_allclose(p_adjust(p, "fdr"), [0.01])
 
     def test_all_one(self):
         p = np.ones(10)
-        assert_allclose(multiple_testing_correction(p, "bonferroni"), np.ones(10))
-        assert_allclose(multiple_testing_correction(p, "holm"), np.ones(10))
-        assert_allclose(multiple_testing_correction(p, "fdr"), np.ones(10))
+        assert_allclose(p_adjust(p, "bonferroni"), np.ones(10))
+        assert_allclose(p_adjust(p, "holm"), np.ones(10))
+        assert_allclose(p_adjust(p, "fdr"), np.ones(10))
 
     def test_qvalue_all_one(self):
         p = np.ones(100)
-        q = multiple_testing_correction(p, "qvalue")
+        q = p_adjust(p, "qvalue")
         assert_allclose(q, np.ones(100))
 
     def test_qvalue_all_zero(self):
         p = np.full(100, 1e-15)
-        q = multiple_testing_correction(p, "qvalue")
+        q = p_adjust(p, "qvalue")
         assert np.all(q >= 0) and np.all(q <= 1)
 
     def test_qvalue_small_n(self):
         p = np.random.default_rng(42).uniform(0, 1, 50)
-        q = multiple_testing_correction(p, "qvalue")
+        q = p_adjust(p, "qvalue")
         assert len(q) == 50
         assert np.all(q >= 0) and np.all(q <= 1)
 
     def test_n_tests_override(self):
         p = np.array([0.001, 0.01])
-        adj = multiple_testing_correction(p, "bonferroni", n_tests=10)
+        adj = p_adjust(p, "bonferroni", n_tests=10)
         assert_allclose(adj, np.minimum(p * 10, 1.0))
 
     def test_unknown_method(self):
         import pytest
 
         with pytest.raises(ValueError, match="Unknown correction"):
-            multiple_testing_correction(np.array([0.01]), "invalid")
+            p_adjust(np.array([0.01]), "invalid")

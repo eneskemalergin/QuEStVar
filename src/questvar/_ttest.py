@@ -7,7 +7,88 @@ from numpy.typing import NDArray
 from scipy.special import stdtr
 
 
-def ttest_ind_with_na(
+def ttest_ind(
+    s1: NDArray[np.float64],
+    s2: NDArray[np.float64],
+    equal_var: bool = False,
+    alternative: str = "two-sided",
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Welch or Student's t-test for independent samples.
+
+    Parameters
+    ----------
+    s1, s2 : ndarray
+        Intensity arrays, shape (n_proteins, n_replicates).
+    equal_var : bool
+        If True, use pooled variance (Student's). Default Welch.
+    alternative : str
+        'two-sided', 'less', or 'greater'.
+
+    Returns
+    -------
+    statistic : ndarray
+        t-statistics, one per protein.
+    pvalue : ndarray
+        p-values, one per protein.
+    df : ndarray
+        degrees of freedom, one per protein.
+    """
+    s1 = np.asarray(s1, dtype=np.float64)
+    s2 = np.asarray(s2, dtype=np.float64)
+    if s1.shape != s2.shape:
+        raise ValueError(
+            f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}"
+        )
+    n1 = np.sum(~np.isnan(s1), axis=1).astype(np.float64)
+    n2 = np.sum(~np.isnan(s2), axis=1).astype(np.float64)
+    m1 = np.nanmean(s1, axis=1)
+    m2 = np.nanmean(s2, axis=1)
+    v1 = np.nanvar(s1, axis=1, ddof=1)
+    v2 = np.nanvar(s2, axis=1, ddof=1)
+    return _ttest_ind(m1, m2, v1, v2, n1, n2, equal_var, alternative)
+
+
+def ttest_rel(
+    s1: NDArray[np.float64],
+    s2: NDArray[np.float64],
+    alternative: str = "two-sided",
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Paired t-test.
+
+    Parameters
+    ----------
+    s1, s2 : ndarray
+        Paired intensity arrays, shape (n_proteins, n_replicates).
+    alternative : str
+        'two-sided', 'less', or 'greater'.
+
+    Returns
+    -------
+    statistic : ndarray
+        t-statistics, one per protein.
+    pvalue : ndarray
+        p-values, one per protein.
+    df : ndarray
+        degrees of freedom, one per protein.
+    """
+    s1 = np.asarray(s1, dtype=np.float64)
+    s2 = np.asarray(s2, dtype=np.float64)
+    if s1.shape != s2.shape:
+        raise ValueError(
+            f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}"
+        )
+    d = s1 - s2
+    n = np.sum(~np.isnan(d), axis=1).astype(np.float64)
+    mean = np.nanmean(d, axis=1)
+    var = np.nanvar(d, axis=1, ddof=1)
+    se = np.sqrt(var / n)
+    t_stat = np.where(se > 0, mean / se, 0.0)
+    df = n - 1.0
+    p_val = _pvalue_from_t(t_stat, df, alternative)
+    return t_stat, p_val, df
+
+
+def _ttest_ind(
     m1: NDArray[np.float64],
     m2: NDArray[np.float64],
     v1: NDArray[np.float64],
@@ -16,7 +97,7 @@ def ttest_ind_with_na(
     n2: NDArray[np.float64],
     equal_var: bool = False,
     alternative: str = "two-sided",
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         if equal_var:
@@ -31,21 +112,7 @@ def ttest_ind_with_na(
 
         t_stat = np.where(se > 0, (m1 - m2) / se, 0.0)
     p_val = _pvalue_from_t(t_stat, df, alternative)
-    return t_stat, p_val
-
-
-def ttest_rel_with_na(
-    d: NDArray[np.float64],
-    n: NDArray[np.float64],
-    alternative: str = "two-sided",
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    mean = np.nanmean(d, axis=1)
-    var = np.nanvar(d, axis=1, ddof=1)
-    se = np.sqrt(var / n)
-    t_stat = np.where(se > 0, mean / se, 0.0)
-    df = n - 1.0
-    p_val = _pvalue_from_t(t_stat, df, alternative)
-    return t_stat, p_val
+    return t_stat, p_val, df
 
 
 def _pvalue_from_t(
@@ -69,7 +136,7 @@ def run_unpaired(
     p_thr: float = 0.05,
     correction: str | None = "fdr",
 ) -> NDArray[np.float64]:
-    from questvar._correction import multiple_testing_correction as mtc
+    from questvar._correction import p_adjust
 
     n1 = np.sum(~np.isnan(s1), axis=1).astype(np.float64)
     n2 = np.sum(~np.isnan(s2), axis=1).astype(np.float64)
@@ -80,10 +147,10 @@ def run_unpaired(
     log2fc = m1 - m2
     avg = (m1 + m2) / 2.0
 
-    t_df, p_df = ttest_ind_with_na(m1, m2, v1, v2, n1, n2, alternative="two-sided")
-    p_df_adj = mtc(p_df, correction)
+    t_df, p_df, _ = _ttest_ind(m1, m2, v1, v2, n1, n2, alternative="two-sided")
+    p_df_adj = p_adjust(p_df, correction)
 
-    p_eq_up, _ = ttest_ind_with_na(
+    p_eq_up, _, _ = _ttest_ind(
         m1 - eq_thr,
         m2,
         v1,
@@ -92,7 +159,7 @@ def run_unpaired(
         n2,
         alternative="less",
     )
-    p_eq_lo, _ = ttest_ind_with_na(
+    p_eq_lo, _, _ = _ttest_ind(
         m1 + eq_thr,
         m2,
         v1,
@@ -102,10 +169,10 @@ def run_unpaired(
         alternative="greater",
     )
     p_eq = np.maximum(p_eq_up, p_eq_lo)
-    p_eq_adj = mtc(p_eq, correction)
+    p_eq_adj = p_adjust(p_eq, correction)
 
     comb_p = np.where(np.abs(log2fc) < eq_thr, p_eq, p_df)
-    comb_adj = mtc(comb_p, correction)
+    comb_adj = p_adjust(comb_p, correction)
 
     status = np.zeros(len(s1), dtype=np.int8)
     is_equiv = (p_eq_adj < p_thr) & (np.abs(log2fc) < eq_thr)
@@ -124,9 +191,9 @@ def run_unpaired(
             p_df,
             p_df_adj,
             p_eq_lo,
-            mtc(p_eq_lo, correction),
+            p_adjust(p_eq_lo, correction),
             p_eq_up,
-            mtc(p_eq_up, correction),
+            p_adjust(p_eq_up, correction),
             p_eq,
             p_eq_adj,
             comb_p,
@@ -146,23 +213,23 @@ def run_paired(
     p_thr: float = 0.05,
     correction: str | None = "fdr",
 ) -> NDArray[np.float64]:
-    from questvar._correction import multiple_testing_correction as mtc
+    from questvar._correction import p_adjust
 
     d = s1 - s2
     n = np.sum(~np.isnan(d), axis=1).astype(np.float64)
     log2fc = np.nanmean(d, axis=1)
     avg = (np.nanmean(s1, axis=1) + np.nanmean(s2, axis=1)) / 2.0
 
-    t_df, p_df = ttest_rel_with_na(d, n, alternative="two-sided")
-    p_df_adj = mtc(p_df, correction)
+    t_df, p_df, _ = _ttest_ind_from_rel(d, n, alternative="two-sided")
+    p_df_adj = p_adjust(p_df, correction)
 
-    _, p_eq_up = ttest_rel_with_na(d - eq_thr, n, alternative="less")
-    _, p_eq_lo = ttest_rel_with_na(d + eq_thr, n, alternative="greater")
+    _, p_eq_up, _ = _ttest_ind_from_rel(d - eq_thr, n, alternative="less")
+    _, p_eq_lo, _ = _ttest_ind_from_rel(d + eq_thr, n, alternative="greater")
     p_eq = np.maximum(p_eq_up, p_eq_lo)
-    p_eq_adj = mtc(p_eq, correction)
+    p_eq_adj = p_adjust(p_eq, correction)
 
     comb_p = np.where(np.abs(log2fc) < eq_thr, p_eq, p_df)
-    comb_adj = mtc(comb_p, correction)
+    comb_adj = p_adjust(comb_p, correction)
 
     status = np.zeros(len(s1), dtype=np.int8)
     is_equiv = (p_eq_adj < p_thr) & (np.abs(log2fc) < eq_thr)
@@ -181,9 +248,9 @@ def run_paired(
             p_df,
             p_df_adj,
             p_eq_lo,
-            mtc(p_eq_lo, correction),
+            p_adjust(p_eq_lo, correction),
             p_eq_up,
-            mtc(p_eq_up, correction),
+            p_adjust(p_eq_up, correction),
             p_eq,
             p_eq_adj,
             comb_p,
@@ -193,6 +260,20 @@ def run_paired(
             status.astype(np.float64),
         ]
     )
+
+
+def _ttest_ind_from_rel(
+    d: NDArray[np.float64],
+    n: NDArray[np.float64],
+    alternative: str = "two-sided",
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    mean = np.nanmean(d, axis=1)
+    var = np.nanvar(d, axis=1, ddof=1)
+    se = np.sqrt(var / n)
+    t_stat = np.where(se > 0, mean / se, 0.0)
+    df = n - 1.0
+    p_val = _pvalue_from_t(t_stat, df, alternative)
+    return t_stat, p_val, df
 
 
 def _log10_safe(p: NDArray[np.float64]) -> NDArray[np.float64]:
