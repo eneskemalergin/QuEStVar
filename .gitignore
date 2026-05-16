@@ -1,4 +1,5 @@
 # Dev folders to ignore
+tmp/
 ref/
 plan/
 

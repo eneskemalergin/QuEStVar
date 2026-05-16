@@ -23,7 +23,7 @@
     <a href="#plotting"><img src="https://img.shields.io/badge/plot-antlers-ef4444?style=for-the-badge&logo=matplotlib&logoColor=white" alt="Antlers plot" /></a>
 </p>
 
-QuEStVar is a testing utility for paired equivalence and difference testing. It is built around the logic in [Statistical testing for protein equivalence identifies core functional modules conserved across 360 cancer cell lines](ref/statistical-testing-for-protein-equivalence-identifies-core-functional-modules-conserved-across-360-cancer-cell-lines.pdf).
+QuEStVar is a testing utility for paired equivalence and difference testing. It is built around the logic in [Statistical testing for protein equivalence identifies core functional modules conserved across 360 cancer cell lines](https://pubs.acs.org/doi/10.1021/acs.jproteome.4c00131).
 
 The point is simple. A non-significant difference test does not mean two groups are equivalent. QuEStVar adds an equivalence test so that case is explicit instead of implied.
 
@@ -36,7 +36,7 @@ The package uses NumPy and SciPy for computation and Polars for data I/O. Python
 - Multiple testing correction with BH-FDR, Holm, Bonferroni, Hochberg, BY, and q-value paths
 - Antler's plot for signed `-log10(p)` visualisation
 - Power analysis for equivalence boundary planning
-- Polars-first input and output, with pandas accepted at the boundary
+- Polars-first input and output, with NumPy arrays supported at the computation boundary
 
 ## Requirements
 
@@ -184,7 +184,7 @@ MIT
 ---
 
 <p align="center">
-    <em>Proteins are compared,</em><br />
-    <em>boundaries keep the signal honest,</em><br />
-    <em>and the plot carries both sides.</em>
+    <em>Static cells in ice,</em><br />
+    <em>Strict bounds trace the quiet line,</em><br />
+    <em>Where twin shapes agree.</em>
 </p>

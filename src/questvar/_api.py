@@ -142,8 +142,7 @@ class QuestVar:
     def power_analysis(self, **kwargs) -> PowerResults:
         from questvar.power.run import run_power_analysis
 
-        results = run_power_analysis(**kwargs)
-        return PowerResults(results)
+        return run_power_analysis(**kwargs)
 
 
 class TestResults:
@@ -172,7 +171,7 @@ class TestResults:
 
     def plot(self, **kwargs):
         try:
-            from questvar.plot.antlers import antlers_plot
+            from questvar.plot.test import antlers_plot
         except ImportError:
             raise ImportError(
                 "Plotting requires matplotlib. Install with: uv add questvar[plots]"
@@ -215,41 +214,129 @@ class PowerResults:
 
     Attributes
     ----------
-    results : list of dict
-        Each dict has parameter, value, sei, power, n_reps, eq_thr,
-        cv_mean, and config metadata.
+    config : dict
+        Normalized power-analysis configuration and metadata.
+    design_grid : list of dict
+        Aggregated metrics for each tested design point.
+    run_metrics : list of dict
+        Per-run Monte Carlo metrics in long format.
+    search_results : list of dict
+        Search outcomes for supported optimization axes.
     """
 
-    def __init__(self, results: list[dict]):
-        self.results = results
+    def __init__(self, payload: dict):
+        self.config = payload.get("config", {})
+        self.design_grid = payload.get("design_grid", [])
+        self.run_metrics = payload.get("run_metrics", [])
+        self.calibration_metrics = payload.get("calibration_metrics", [])
+        self.search_results = payload.get("search_results", [])
+        self.diagnostics = payload.get("diagnostics", {})
+        self.results = self.design_grid
 
     def summary(self) -> str:
         lines = ["Power Analysis Results", "=" * 40]
-        for r in self.results:
+        for r in self.design_grid:
             lines.append(
                 f"  {r['parameter']}={r['value']:4}  "
-                f"SEI={r['sei']:.3f}  Power={r['power']:.3f}  "
+                f"SEI={r['sei_mean']:.3f}  Power={r['power']:.3f}  "
                 f"(n_reps={r['n_reps']}, eq_thr={r['eq_thr']}, cv_mean={r['cv_mean']})"
             )
         return "\n".join(lines)
 
     def save(self, path: str) -> None:
+        import json
+
         import polars as pl
 
-        df = pl.DataFrame(self.results)
         suffix = Path(path).suffix
         if suffix == ".parquet":
+            df = pl.DataFrame(self.design_grid)
             df.write_parquet(path)
         elif suffix == ".csv":
+            df = pl.DataFrame(self.design_grid)
             df.write_csv(path)
         elif suffix == ".tsv":
+            df = pl.DataFrame(self.design_grid)
             df.write_csv(path, separator="\t")
+        elif suffix == ".json":
+            with open(path, "w") as f:
+                json.dump(self.to_dict(), f, indent=2)
         else:
             raise ValueError(f"Unknown format: {suffix}")
 
+    def to_dict(self) -> dict:
+        return {
+            "config": self.config,
+            "design_grid": self.design_grid,
+            "run_metrics": self.run_metrics,
+            "calibration_metrics": self.calibration_metrics,
+            "search_results": self.search_results,
+            "diagnostics": self.diagnostics,
+        }
+
+    def to_frame(self, level: str = "design_grid"):
+        import polars as pl
+
+        if level not in self.to_dict():
+            raise ValueError(f"Unknown PowerResults level: {level}")
+        payload = self.to_dict()[level]
+        if isinstance(payload, dict):
+            return pl.DataFrame([payload])
+        return pl.DataFrame(payload)
+
+    def optimal_design(self, search_for: str = "n_reps") -> dict | None:
+        for row in self.search_results:
+            if row["search_for"] == search_for:
+                return row
+        return None
+
+    def compare(self, other, level: str = "design_grid") -> list[dict]:
+        if hasattr(other, "to_dict"):
+            other_payload = other.to_dict()
+        elif isinstance(other, dict):
+            other_payload = other
+        else:
+            raise TypeError("other must be a PowerResults-like object or dict")
+
+        left_rows = self.to_dict().get(level, [])
+        right_rows = other_payload.get(level, [])
+        if not isinstance(left_rows, list) or not isinstance(right_rows, list):
+            raise ValueError("compare() requires a tabular list-like level")
+
+        keys = [
+            "parameter",
+            "value",
+            "n_reps",
+            "eq_thr",
+            "cv_mean",
+            "cv_thr",
+            "effect_size",
+            "equivalent_fraction",
+        ]
+        right_index = {
+            tuple(row.get(key) for key in keys): row
+            for row in right_rows
+        }
+        comparison: list[dict] = []
+        for row in left_rows:
+            join_key = tuple(row.get(key) for key in keys)
+            other_row = right_index.get(join_key)
+            if other_row is None:
+                continue
+            comparison.append(
+                {
+                    **{key: row.get(key) for key in keys},
+                    "delta_sei_mean": row.get("sei_mean", 0.0) - other_row.get("sei_mean", 0.0),
+                    "delta_power": row.get("power", 0.0) - other_row.get("power", 0.0),
+                    "delta_false_equiv_rate": row.get("false_equiv_rate", 0.0) - other_row.get("false_equiv_rate", 0.0),
+                    "delta_differential_sensitivity": row.get("differential_sensitivity", 0.0) - other_row.get("differential_sensitivity", 0.0),
+                }
+            )
+        return comparison
+
     def plot(self, **kwargs):
         try:
-            from questvar.plot.power_profile import power_profile_plot
+            from questvar.plot.power import power_profile_plot
         except ImportError:
             raise ImportError(
                 "Plotting requires matplotlib. Install with: uv add questvar[plots]"
