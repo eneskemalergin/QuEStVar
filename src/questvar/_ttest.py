@@ -148,27 +148,23 @@ def run_unpaired(
     log2fc = m1 - m2
     avg = (m1 + m2) / 2.0
 
-    t_df, p_df, _ = _ttest_ind(m1, m2, v1, v2, n1, n2, alternative="two-sided")
-    p_df_adj = p_adjust(p_df, correction)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        se = np.sqrt(v1 / n1 + v2 / n2)
+        num = (v1 / n1 + v2 / n2) ** 2
+        den = (v1 / n1) ** 2 / (n1 - 1.0) + (v2 / n2) ** 2 / (n2 - 1.0)
+        df = np.where(den > 0, num / den, 1.0)
 
-    p_eq_up, _, _ = _ttest_ind(
-        m1 - eq_thr,
-        m2,
-        v1,
-        v2,
-        n1,
-        n2,
-        alternative="less",
-    )
-    p_eq_lo, _, _ = _ttest_ind(
-        m1 + eq_thr,
-        m2,
-        v1,
-        v2,
-        n1,
-        n2,
-        alternative="greater",
-    )
+    def _t_pval(diff: NDArray, alt: str) -> NDArray:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            t = np.where(diff == 0, 0.0, diff / se)
+        return _pvalue_from_t(t, df, alt)
+
+    p_df = _t_pval(m1 - m2, "two-sided")
+    p_df_adj = p_adjust(p_df, correction)
+    p_eq_up = _t_pval(m1 - eq_thr - m2, "less")
+    p_eq_lo = _t_pval(m1 + eq_thr - m2, "greater")
     p_eq = np.maximum(p_eq_up, p_eq_lo)
     p_eq_adj = p_adjust(p_eq, correction)
 
@@ -220,12 +216,21 @@ def run_paired(
     n = np.sum(~np.isnan(d), axis=1).astype(np.float64)
     log2fc = np.nanmean(d, axis=1)
     avg = (np.nanmean(s1, axis=1) + np.nanmean(s2, axis=1)) / 2.0
+    var = np.nanvar(d, axis=1, ddof=1)
+    se = np.sqrt(var / n)
+    df = n - 1.0
 
-    t_df, p_df, _ = _ttest_ind_from_rel(d, n, alternative="two-sided")
+    def _t_pval(diff: NDArray, alt: str) -> NDArray:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            t = np.where(diff == 0, 0.0, diff / se)
+        return _pvalue_from_t(t, df, alt)
+
+    p_df = _t_pval(log2fc, "two-sided")
     p_df_adj = p_adjust(p_df, correction)
 
-    _, p_eq_up, _ = _ttest_ind_from_rel(d - eq_thr, n, alternative="less")
-    _, p_eq_lo, _ = _ttest_ind_from_rel(d + eq_thr, n, alternative="greater")
+    p_eq_up = _t_pval(log2fc - eq_thr, "less")
+    p_eq_lo = _t_pval(log2fc + eq_thr, "greater")
     p_eq = np.maximum(p_eq_up, p_eq_lo)
     p_eq_adj = p_adjust(p_eq, correction)
 
