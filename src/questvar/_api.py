@@ -172,12 +172,12 @@ class TestResults:
 
     def plot(self, **kwargs):
         try:
-            from questvar.plot.test import antlers_plot
+            from questvar.plot.test import plot_summary
         except ImportError:
             raise ImportError(
                 "Plotting requires matplotlib. Install with: uv add questvar[plots]"
             ) from None
-        return antlers_plot(self, **kwargs)
+        return plot_summary(self, **kwargs)
 
     def save(self, path: str) -> None:
         suffix = Path(path).suffix
@@ -333,30 +333,14 @@ class PowerResults:
     def plot(self, kind: str = "power_profile", **kwargs):
         try:
             from questvar.plot.power import (
-                calibration_heatmap_plot,
-                calibration_status_curve_plot,
-                cv_tolerance_heatmap_plot,
-                decision_region_heatmap_plot,
-                power_heatmap_plot,
-                power_profile_plot,
-                power_summary_plot,
-                sei_distribution_plot,
-                sei_profile_plot,
+                plot_power
             )
         except ImportError:
             raise ImportError(
                 "Plotting requires matplotlib. Install with: uv add questvar[plots]"
             ) from None
         plotters = {
-            "power_profile": power_profile_plot,
-            "power_heatmap": power_heatmap_plot,
-            "calibration_heatmap": calibration_heatmap_plot,
-            "calibration_status_curve": calibration_status_curve_plot,
-            "sei_profile": sei_profile_plot,
-            "sei_distribution": sei_distribution_plot,
-            "cv_tolerance_heatmap": cv_tolerance_heatmap_plot,
-            "decision_region": decision_region_heatmap_plot,
-            "power_summary": power_summary_plot,
+            "plot_power": plot_power
         }
         if kind not in plotters:
             raise ValueError(f"Unknown PowerResults plot kind: {kind}")
