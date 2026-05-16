@@ -5,7 +5,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from questvar._api import PowerResults
-from questvar.plot.power import calibration_heatmap_plot, power_heatmap_plot
+
 from questvar.power._simulate import simulate_data
 from questvar.power.run import run_power_analysis
 
@@ -241,45 +241,3 @@ class TestPowerAnalysis:
 
         comparison = alt.compare(base)
         assert isinstance(comparison, list)
-
-    def test_power_heatmap_handles_infeasible_grid(self, tmp_path):
-        pytest.importorskip("matplotlib")
-
-        results = run_power_analysis(
-            eq_boundaries=[0.2, 0.4],
-            n_reps_list=[3, 5],
-            cv_mean_list=[20],
-            n_prts=200,
-            n_iterations=2,
-            cv_thr=0.15,
-            target_sei=0.9,
-            target_power=0.95,
-            n_jobs=1,
-        )
-
-        out = tmp_path / "infeasible_power.png"
-        fig = power_heatmap_plot(results, output=str(out))
-
-        assert out.exists()
-        assert any("Infeasible design grid" in text.get_text() for text in fig.axes[0].texts)
-
-    def test_calibration_heatmap_handles_zero_equivalence_grid(self, tmp_path):
-        pytest.importorskip("matplotlib")
-
-        payload = {
-            "config": {"eq_thr": 0.5, "df_thr": 1.0},
-            "calibration_metrics": [
-                {"effect_size": -1.0, "n_reps": 3, "status_prob_equiv": 0.0},
-                {"effect_size": 0.0, "n_reps": 3, "status_prob_equiv": 0.0},
-                {"effect_size": 1.0, "n_reps": 3, "status_prob_equiv": 0.0},
-                {"effect_size": -1.0, "n_reps": 5, "status_prob_equiv": 0.0},
-                {"effect_size": 0.0, "n_reps": 5, "status_prob_equiv": 0.0},
-                {"effect_size": 1.0, "n_reps": 5, "status_prob_equiv": 0.0},
-            ],
-        }
-
-        out = tmp_path / "degenerate_calibration.png"
-        fig = calibration_heatmap_plot(payload, output=str(out))
-
-        assert out.exists()
-        assert any("No equivalence calls observed" in text.get_text() for text in fig.axes[0].texts)

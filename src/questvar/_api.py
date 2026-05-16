@@ -334,11 +334,34 @@ class PowerResults:
             )
         return comparison
 
-    def plot(self, **kwargs):
+    def plot(self, kind: str = "power_profile", **kwargs):
         try:
-            from questvar.plot.power import power_profile_plot
+            from questvar.plot.power import (
+                calibration_heatmap_plot,
+                calibration_status_curve_plot,
+                cv_tolerance_heatmap_plot,
+                decision_region_heatmap_plot,
+                power_heatmap_plot,
+                power_profile_plot,
+                power_summary_plot,
+                sei_distribution_plot,
+                sei_profile_plot,
+            )
         except ImportError:
             raise ImportError(
                 "Plotting requires matplotlib. Install with: uv add questvar[plots]"
             ) from None
-        return power_profile_plot(self, **kwargs)
+        plotters = {
+            "power_profile": power_profile_plot,
+            "power_heatmap": power_heatmap_plot,
+            "calibration_heatmap": calibration_heatmap_plot,
+            "calibration_status_curve": calibration_status_curve_plot,
+            "sei_profile": sei_profile_plot,
+            "sei_distribution": sei_distribution_plot,
+            "cv_tolerance_heatmap": cv_tolerance_heatmap_plot,
+            "decision_region": decision_region_heatmap_plot,
+            "power_summary": power_summary_plot,
+        }
+        if kind not in plotters:
+            raise ValueError(f"Unknown PowerResults plot kind: {kind}")
+        return plotters[kind](self, **kwargs)

@@ -1,6 +1,8 @@
 # Dev folders to ignore
 tmp/
 ref/
+dev/
+real/
 plan/
 
 # Python
