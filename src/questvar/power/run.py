@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
+from functools import partial
 
 import numpy as np
 
@@ -32,64 +33,46 @@ def run_power_analysis(
     if cv_mean_list is None:
         cv_mean_list = [15, 27.5, 40]
 
-    param_sets = []
     meta = dict(
-        n_prts=n_prts,
-        p_thr=p_thr,
-        df_thr=df_thr,
-        cv_thr=cv_thr,
-        correction=correction,
-        int_mu=int_mu,
-        int_sd=int_sd,
-        cv_k=cv_k,
-        cv_theta=cv_theta,
+        n_prts=n_prts, p_thr=p_thr, df_thr=df_thr, cv_thr=cv_thr,
+        correction=correction, int_mu=int_mu, int_sd=int_sd,
+        cv_k=cv_k, cv_theta=cv_theta,
     )
 
+    param_sets: list[dict] = []
     for eq_thr in eq_boundaries:
-        param_sets.append(
-            dict(
-                parameter="eq_thr", value=eq_thr, n_reps=10, eq_thr=eq_thr, cv_mean=27.5
-            )
-        )
+        param_sets.append(dict(
+            parameter="eq_thr", value=eq_thr, n_reps=10,
+            eq_thr=eq_thr, cv_mean=27.5,
+        ))
     for n_reps in n_reps_list:
-        param_sets.append(
-            dict(
-                parameter="n_reps",
-                value=n_reps,
-                n_reps=n_reps,
-                eq_thr=0.5,
-                cv_mean=27.5,
-            )
-        )
+        param_sets.append(dict(
+            parameter="n_reps", value=n_reps, n_reps=n_reps,
+            eq_thr=0.5, cv_mean=27.5,
+        ))
     for cv_mean in cv_mean_list:
-        param_sets.append(
-            dict(
-                parameter="cv_mean",
-                value=cv_mean,
-                n_reps=10,
-                eq_thr=0.5,
-                cv_mean=cv_mean,
-            )
-        )
+        param_sets.append(dict(
+            parameter="cv_mean", value=cv_mean, n_reps=10,
+            eq_thr=0.5, cv_mean=cv_mean,
+        ))
 
-    iterations = [(ps, i, meta) for ps in param_sets for i in range(n_iterations)]
+    tasks = [(ps, i) for ps in param_sets for i in range(n_iterations)]
 
     results: dict = {}
     for ps in param_sets:
         results.setdefault(ps["parameter"], {})
 
+    worker = partial(_simulate_one, meta=meta)
+
     if n_jobs is None or n_jobs > 1:
-        with ProcessPoolExecutor(max_workers=n_jobs) as pool:
-            fut = {pool.submit(_simulate_one, it): it for it in iterations}
-            for f in as_completed(fut):
-                ps, _, _ = fut[f]
-                sei = f.result()
-                _accumulate(results, ps, sei)
+        n_workers = n_jobs if n_jobs is not None else mp.cpu_count()
+        with mp.Pool(n_workers) as pool:
+            seis = pool.map(worker, tasks)
     else:
-        for it in iterations:
-            ps, _, _ = it
-            sei = _simulate_one(it)
-            _accumulate(results, ps, sei)
+        seis = [worker(t) for t in tasks]
+
+    for (ps, _), sei in zip(tasks, seis, strict=True):
+        _accumulate(results, ps, sei)
 
     output = []
     for ps in param_sets:
@@ -98,18 +81,12 @@ def run_power_analysis(
             continue
         avg_sei = entry["sum"] / entry["count"]
         power = max(0.0, min(1.0, 1.0 - max(0.0, target_power - avg_sei)))
-        output.append(
-            dict(
-                parameter=ps["parameter"],
-                value=ps["value"],
-                sei=avg_sei,
-                power=power,
-                n_reps=ps["n_reps"],
-                eq_thr=ps["eq_thr"],
-                cv_mean=ps["cv_mean"],
-                **meta,
-            )
-        )
+        output.append(dict(
+            parameter=ps["parameter"], value=ps["value"],
+            sei=avg_sei, power=power,
+            n_reps=ps["n_reps"], eq_thr=ps["eq_thr"], cv_mean=ps["cv_mean"],
+            **meta,
+        ))
     return output
 
 
@@ -122,8 +99,8 @@ def _accumulate(results: dict, ps: dict, sei: float) -> None:
     results[param][val]["count"] += 1
 
 
-def _simulate_one(iteration: tuple) -> float:
-    ps, i, meta = iteration
+def _simulate_one(task: tuple, meta: dict) -> float:
+    ps, i = task
     data = simulate_data(
         n_prts=meta["n_prts"],
         n_reps=ps["n_reps"] * 2,
@@ -136,9 +113,10 @@ def _simulate_one(iteration: tuple) -> float:
         seed=i,
     )
     s1, s2 = np.split(data, 2, axis=1)
+    s1 = np.log2(s1)
+    s2 = np.log2(s2)
     result = run_unpaired(
-        s1,
-        s2,
+        s1, s2,
         eq_thr=ps["eq_thr"],
         df_thr=meta["df_thr"],
         p_thr=meta["p_thr"],
