@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+import numpy as np
+from numpy.typing import NDArray
+
+
+def simulate_data(
+    n_prts: int = 10000,
+    n_reps: int = 10,
+    int_mu: float = 18.0,
+    int_sd: float = 1.0,
+    int_log2: bool = True,
+    cv_mu: float = 27.5,
+    cv_k: float = 2.0,
+    cv_theta: float = 0.5,
+    cv_pct: bool = True,
+    seed: int | None = None,
+) -> NDArray[np.float64]:
+    if seed is not None:
+        np.random.seed(seed)
+
+    mean_dist = np.random.normal(int_mu, int_sd, n_prts)
+    if int_log2:
+        mean_dist = np.power(2.0, mean_dist)
+    mean_dist = mean_dist[:, np.newaxis]
+
+    cv_dist = np.random.gamma(cv_k, cv_theta, n_prts)
+    cv_dist = cv_dist * cv_mu / np.mean(cv_dist)
+    cv_dist = cv_dist - np.min(cv_dist) + 1.0
+    if cv_pct:
+        cv_dist = cv_dist / 100.0
+    cv_dist = cv_dist[:, np.newaxis]
+
+    if np.any(mean_dist == 0):
+        raise ValueError("Mean values cannot be zero for log-normal distribution.")
+
+    sd_dist = mean_dist * cv_dist
+    mu_ln = np.log(mean_dist**2 / np.sqrt(sd_dist**2 + mean_dist**2))
+    sigma_ln = np.sqrt(np.log1p(cv_dist**2))
+    data = np.random.lognormal(mu_ln, sigma_ln, (n_prts, n_reps))
+    return data.astype(np.float64)
