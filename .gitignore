@@ -1,0 +1,32 @@
+# Dev folders to ignore
+ref/
+plan/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Type checking
+.mypy_cache/
+.ty_cache/
+
+# Caches
+.ruff_cache/
+.pytest_cache/
+
+# Docs
+site/
