@@ -347,7 +347,7 @@ def plot_summary(
     ax_c.set_xscale("log")
     ax_c.set_yscale("log")
     ax_c.grid(True, **_grid_kw)
-    ax_c.set_title("Adj. P-value\nComparison", **_subtitle_kw)
+    ax_c.set_title("Comparison", **_subtitle_kw)
     ax_c.tick_params(**_tick_kw)
 
     # ------------------------------------------------------------------
@@ -573,7 +573,7 @@ def plot_summary(
             )
             ax_h.axis("off")
 
-    ax_h.set_title("Sample Size\nComparison", **_subtitle_kw)
+    ax_h.set_title("Sample Size Comparison", **_subtitle_kw)
 
     # ------------------------------------------------------------------
     # Legend panel (column 5, row 2)

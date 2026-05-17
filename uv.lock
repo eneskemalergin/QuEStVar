@@ -1044,15 +1044,8 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "polars" },
+    { name = "pyyaml" },
     { name = "scipy" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "pyyaml" },
-]
-yaml = [
-    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -1073,11 +1066,9 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "numpy", specifier = ">=2.4.5" },
     { name = "polars", specifier = ">=1.40.1" },
-    { name = "pyyaml", marker = "extra == 'yaml'", specifier = ">=6.0" },
-    { name = "questvar", extras = ["yaml"], marker = "extra == 'all'" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "scipy", specifier = ">=1.17.1" },
 ]
-provides-extras = ["yaml", "all"]
 
 [package.metadata.requires-dev]
 dev = [

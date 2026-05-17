@@ -26,32 +26,20 @@ class _ConfigMixin:
 
     @classmethod
     def from_yaml(cls, path: str):
-        try:
-            import yaml
+        import yaml
 
-            with open(path) as f:
-                return cls.from_dict(yaml.safe_load(f))
-        except ImportError:
-            import json
-
-            with open(path) as f:
-                return cls.from_dict(json.load(f))
+        with open(path) as f:
+            return cls.from_dict(yaml.safe_load(f))
 
     def to_dict(self) -> dict:
         fields = self.__dataclass_fields__  # type: ignore[attr-defined]
         return {f.name: _plain_value(getattr(self, f.name)) for f in fields.values()}
 
     def to_yaml(self, path: str) -> None:
-        try:
-            import yaml
+        import yaml
 
-            with open(path, "w") as f:
-                yaml.dump(self.to_dict(), f)
-        except ImportError:
-            import json
-
-            with open(path, "w") as f:
-                json.dump(self.to_dict(), f, indent=2)
+        with open(path, "w") as f:
+            yaml.dump(self.to_dict(), f)
 
     def replace(self, **overrides):
         return replace(self, **overrides)

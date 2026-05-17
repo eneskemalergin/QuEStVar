@@ -43,14 +43,9 @@ The package uses NumPy and SciPy for computation and Polars for data I/O. Python
 - Python 3.12 or newer
 - NumPy 2.0 or newer
 - Polars 1.0 or newer
+- PyYAML 6.0 or newer
 - SciPy 1.10 or newer
-
-Optional extras:
-
-- `matplotlib` for plotting
-- `pyyaml` for YAML config loading in the library
-- `typer` for an alternate CLI experience later
-- `numba` for user-side acceleration experiments
+- Matplotlib 3.0 or newer
 
 ## Installation
 
@@ -58,12 +53,6 @@ From a local checkout:
 
 ```bash
 uv pip install -e .
-```
-
-With extras:
-
-```bash
-uv pip install -e ".[plots,yaml,cli,accel]"
 ```
 
 With pip:
@@ -91,7 +80,7 @@ results.plot()
 
 ## YAML Config
 
-The library can build a `QuestVar` object from YAML when `pyyaml` is installed.
+The library can build a `QuestVar` object from a YAML config file.
 
 ```python
 import questvar as qv
@@ -147,7 +136,7 @@ questvar plot --type power --results power_results.parquet --output power_profil
 
 The main figure is Antler's plot. It uses signed `-log10(p)` on the y axis and `log2 fold change` on the x axis. Equivalent features appear above zero, differential features below zero.
 
-When `matplotlib` is installed, you can also call the plotting helpers directly:
+You can also call the plotting helpers directly:
 
 ```python
 results.plot()

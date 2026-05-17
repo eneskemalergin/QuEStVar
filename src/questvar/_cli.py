@@ -65,7 +65,16 @@ def _cmd_test(args: argparse.Namespace) -> None:
 
     cond_1 = args.cond_1.split(",")
     cond_2 = args.cond_2.split(",")
-    data = pl.read_parquet(args.data)
+    _path = args.data
+    _suffix = _path.rsplit(".", 1)[-1].lower() if "." in _path else ""
+    if _suffix == "parquet":
+        data = pl.read_parquet(_path)
+    elif _suffix == "csv":
+        data = pl.read_csv(_path)
+    elif _suffix in ("tsv", "txt"):
+        data = pl.read_csv(_path, separator="\t")
+    else:
+        raise ValueError(f"Unsupported input format: .{_suffix}. Use .parquet, .csv, or .tsv")
 
     config = TestConfig.from_yaml(args.config) if args.config else None
     overrides = {}
