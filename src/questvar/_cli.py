@@ -10,37 +10,41 @@ import numpy as np
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="questvar",
-        description="Equivalence and difference testing for proteomics",
+        description="Equivalence and difference testing for quantitative omics data",
     )
     sub = parser.add_subparsers(dest="command")
 
     p_test = sub.add_parser("test", help="Run equivalence test")
-    p_test.add_argument("--data", required=True, help="Path to input parquet file")
-    p_test.add_argument("--cond-1", required=True, help="column names for condition 1")
-    p_test.add_argument("--cond-2", required=True, help="column names for condition 2")
-    p_test.add_argument("--output", default="results.parquet", help="output")
+    p_test.add_argument("--data", required=True, help="Path to input file (.parquet, .csv, .tsv, .txt)")
+    p_test.add_argument("--cond-1", required=True, help="Comma-separated column names for condition 1")
+    p_test.add_argument("--cond-2", required=True, help="Comma-separated column names for condition 2")
+    p_test.add_argument("--output", default="results.parquet", help="Output path for results file (.parquet, .csv, or .tsv)")
     p_test.add_argument("--config", help="YAML config file (optional)")
-    p_test.add_argument("--cv-thr", type=float, help="CV threshold")
-    p_test.add_argument("--p-thr", type=float, help="p-value threshold")
-    p_test.add_argument("--df-thr", type=float, help="diff boundary")
-    p_test.add_argument("--eq-thr", type=float, help="Equivalence boundary")
-    p_test.add_argument("--correction", help="Multiple testing correction method")
+    p_test.add_argument("--cv-thr", type=float, help="CV threshold for feature selection")
+    p_test.add_argument("--p-thr", type=float, help="Adjusted p-value threshold")
+    p_test.add_argument("--df-thr", type=float, help="Differential boundary (fold-change units)")
+    p_test.add_argument("--eq-thr", type=float, help="Equivalence boundary (fold-change units)")
+    p_test.add_argument("--correction", help="Multiple testing correction method (fdr, bonferroni, or none)")
+    p_test.add_argument("--allow-missing", action="store_true", help="Allow missing values when computing CV")
+    p_test.add_argument("--is-log2", action="store_true", help="Treat input intensities as already log2-transformed")
+    p_test.add_argument("--is-paired", action="store_true", help="Use paired statistical testing")
+    p_test.add_argument("--var-equal", action="store_true", help="Assume equal variance between conditions")
 
     p_power = sub.add_parser("power", help="Run power analysis")
-    p_power.add_argument("--output", default="power_results.parquet", help="output")
+    p_power.add_argument("--output", default="power_results.parquet", help="Output path for power results (.parquet, .csv, or .tsv)")
     p_power.add_argument("--config", help="YAML config file (optional)")
-    p_power.add_argument("--n-prts", type=int, default=10000, help="proteins")
-    p_power.add_argument("--n-iterations", type=int, default=10, help="iterations")
-    p_power.add_argument("--target-power", type=float, default=0.8, help="Target power")
-    p_power.add_argument("--eq-boundaries", help="equivalence boundaries")
-    p_power.add_argument("--n-reps-list", help="replicate counts")
-    p_power.add_argument("--cv-mean-list", help="mean CV values")
-    p_power.add_argument("--n-jobs", type=int, help="parallel workers")
+    p_power.add_argument("--n-features", type=int, default=10000, help="Number of features to simulate per iteration")
+    p_power.add_argument("--n-iterations", type=int, default=10, help="Monte Carlo iterations per design point")
+    p_power.add_argument("--target-power", type=float, default=0.8, help="Minimum power threshold for design search")
+    p_power.add_argument("--eq-boundaries", help="Comma-separated equivalence boundaries to sweep")
+    p_power.add_argument("--n-reps-list", help="Comma-separated replicate counts to evaluate")
+    p_power.add_argument("--cv-mean-list", help="Comma-separated mean CV values to evaluate")
+    p_power.add_argument("--n-jobs", type=int, help="Number of parallel workers (default: 1)")
 
     p_plot = sub.add_parser("plot", help="Generate plots")
-    p_plot.add_argument("--results", required=True, help="Path to results parquet file")
-    p_plot.add_argument("--output", default="plot.png", help="output image")
-    p_plot.add_argument("--type", default="antlers", choices=["antlers", "power"], help="type")
+    p_plot.add_argument("--results", required=True, help="Path to saved results file (.parquet, .csv, or .tsv)")
+    p_plot.add_argument("--output", default="plot.png", help="Output image path")
+    p_plot.add_argument("--type", default="antlers", choices=["antlers", "power"], help="Plot type")
 
     parser.add_argument("--version", action="version", version="questvar 0.1.0")
 
@@ -88,11 +92,20 @@ def _cmd_test(args: argparse.Namespace) -> None:
         overrides["eq_thr"] = args.eq_thr
     if args.correction is not None:
         overrides["correction"] = args.correction
+    if args.allow_missing:
+        overrides["allow_missing"] = True
+    if args.is_log2:
+        overrides["is_log2"] = True
+    if args.is_paired:
+        overrides["is_paired"] = True
+    if args.var_equal:
+        overrides["var_equal"] = True
 
     qv = QuestVar(config, **overrides)
     result = qv.test(data, cond_1, cond_2)
     result.save(args.output)
     print(result.summary())
+    print(f"  Saved: {args.output}")
 
 
 def _cmd_power(args: argparse.Namespace) -> None:
@@ -123,7 +136,7 @@ def _cmd_power(args: argparse.Namespace) -> None:
     if args.n_jobs is not None:
         kw["n_jobs"] = args.n_jobs
 
-    kw.setdefault("n_prts", args.n_prts)
+    kw.setdefault("n_prts", args.n_features)
     kw.setdefault("n_iterations", args.n_iterations)
     kw.setdefault("target_power", args.target_power)
 

@@ -74,10 +74,10 @@ class QuestVar:
         s2_cv = cv_numpy(s2_arr, ignore_nan=config.allow_missing)
         s1_ps = make_selection_indicator(s1_cv, config.cv_thr)
         s2_ps = make_selection_indicator(s2_cv, config.cv_thr)
-        keep = (s1_ps >= 0) & (s2_ps >= 0)
+        keep = (s1_ps > 0) & (s2_ps > 0)
 
         if not keep.any():
-            raise ValueError("No proteins passed CV filter")
+            raise ValueError("No features passed CV filter")
 
         s1_ready = s1_arr[keep]
         s2_ready = s2_arr[keep]
@@ -107,7 +107,7 @@ class QuestVar:
             )
 
         result_dict = {
-            "protein_id": pl.Series("protein_id", protein_ids[keep]),
+            "feature_id": pl.Series("feature_id", protein_ids[keep]),
             "n1": result_arr[:, COL_N1],
             "n2": result_arr[:, COL_N2],
             "log2fc": result_arr[:, COL_LOG2FC],
@@ -128,7 +128,7 @@ class QuestVar:
         status_all[keep] = result_arr[:, COL_STATUS]
         info_df = pl.DataFrame(
             {
-                "protein_id": pl.Series("protein_id", protein_ids),
+                "feature_id": pl.Series("feature_id", protein_ids),
                 "s1_cv_status": s1_ps,
                 "s2_cv_status": s2_ps,
                 "status": status_all,
@@ -168,15 +168,17 @@ class TestResults:
     Attributes
     ----------
     data : pl.DataFrame
-        Per-protein results with columns: protein_id, n1, n2, log2fc,
+        Per-feature results with columns: feature_id, n1, n2, log2fc,
         average, df_p, df_adjp, eq_p, eq_adjp, comb_p, comb_adjp,
-        log10_pval, log10_adj_pval, status.
+        log10_pval, log10_adj_pval, status. Only features that passed
+        the CV filter are included.
     config : TestConfig
         Configuration used for the analysis.
     cond_1, cond_2 : list of str
         Condition column names.
     info : pl.DataFrame
-        Per-protein CV filter status and overall status.
+        Per-feature CV filter status and overall status for all input
+        features, including those excluded by the CV filter.
     """
 
     __test__ = False
@@ -226,8 +228,18 @@ class TestResults:
         p = Path(path)
         suffix = p.suffix
         stem = p.with_suffix("")
-        data = pl.read_parquet(path)
-        info = pl.read_parquet(f"{stem}.info{suffix}")
+        info_path = f"{stem}.info{suffix}"
+        if suffix == ".parquet":
+            data = pl.read_parquet(path)
+            info = pl.read_parquet(info_path)
+        elif suffix == ".csv":
+            data = pl.read_csv(path)
+            info = pl.read_csv(info_path)
+        elif suffix == ".tsv":
+            data = pl.read_csv(path, separator="\t")
+            info = pl.read_csv(info_path, separator="\t")
+        else:
+            raise ValueError(f"Unknown format: {suffix}")
         with open(f"{stem}.meta.json") as f:
             meta = json.load(f)
         config = TestConfig.from_dict(meta["config"])
@@ -240,17 +252,25 @@ class TestResults:
             row = counts.filter(pl.col("status") == val)
             return row["len"].item() if len(row) > 0 else 0
 
-        total = len(self.data)
+        n_input = len(self.info) if self.info is not None else len(self.data)
+        tested = len(self.data)
+        excluded = n_input - tested
         n_eq = _count(1)
         n_df = _count(-1)
-        n_ns = total - n_eq - n_df
-        return (
-            f"QuEStVar: {self.cond_1} vs {self.cond_2}\n"
-            f"  Proteins after CV filter: {total}\n"
-            f"  Equivalent (+1):  {n_eq} ({100 * n_eq / max(total, 1):.1f}%)\n"
-            f"  Differential (-1): {n_df} ({100 * n_df / max(total, 1):.1f}%)\n"
-            f"  Not significant (0): {n_ns} ({100 * n_ns / max(total, 1):.1f}%)"
-        )
+        n_ns = tested - n_eq - n_df
+        cfg = self.config
+        lines = [
+            f"QuEStVar  {self.cond_1} vs {self.cond_2}",
+            f"  Input features:      {n_input}",
+            f"  Excluded by CV:      {excluded}",
+            f"  Tested:              {tested}",
+            f"  Equivalent  (+1):    {n_eq:>5}  ({100 * n_eq / max(tested, 1):.1f}%)",
+            f"  Differential (-1):   {n_df:>5}  ({100 * n_df / max(tested, 1):.1f}%)",
+            f"  Not significant (0): {n_ns:>5}  ({100 * n_ns / max(tested, 1):.1f}%)",
+            f"  Thresholds:  eq={cfg.eq_thr}  df={cfg.df_thr}  cv={cfg.cv_thr}  p={cfg.p_thr}",
+            f"  Correction:  {cfg.correction}",
+        ]
+        return "\n".join(lines)
 
 
 class PowerResults:

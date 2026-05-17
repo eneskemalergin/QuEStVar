@@ -79,7 +79,7 @@ class TestCliPower:
         main(["power", "--eq-boundaries", "0.5",
               "--n-reps-list", "5",
               "--cv-mean-list", "0.20",
-              "--n-prts", "100",
+              "--n-features", "100",
               "--n-iterations", "2",
               "--n-jobs", "1",
               "--output", str(out)])
@@ -90,7 +90,7 @@ class TestCliPower:
         main(["power", "--eq-boundaries", "0.5",
               "--n-reps-list", "5",
               "--cv-mean-list", "0.20",
-              "--n-prts", "100",
+              "--n-features", "100",
               "--n-iterations", "2",
               "--n-jobs", "1",
               "--output", str(out)])

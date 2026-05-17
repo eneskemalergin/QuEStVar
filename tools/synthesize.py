@@ -321,6 +321,106 @@ def make_paired_dataset(config: DataConfig | None = None, **kwargs) -> Synthetic
 # CLI entry point (quick sanity print)
 # ---------------------------------------------------------------------------
 
+
+def inject_missingness(
+    df: pl.DataFrame,
+    cond_1: list[str],
+    cond_2: list[str],
+    patterns: list[tuple[str, int]],
+    seed: int = 99,
+) -> pl.DataFrame:
+    """
+    Inject controlled missing-value patterns into a DataFrame.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Input data. Must contain columns in cond_1 and cond_2.
+    cond_1, cond_2 : list of str
+        Replicate column names for each condition.
+    patterns : list of (pattern_name, n_proteins)
+        Each tuple names a missing pattern and the number of proteins to
+        receive it. Proteins are drawn without replacement in order.
+        Available pattern names:
+
+        ``"c1_full"``   -- all cond_1 replicates set to NaN
+        ``"c2_full"``   -- all cond_2 replicates set to NaN
+        ``"c1_one"``    -- one random cond_1 replicate set to NaN
+        ``"c2_one"``    -- one random cond_2 replicate set to NaN
+        ``"c1_two"``    -- two random cond_1 replicates set to NaN
+        ``"c2_two"``    -- two random cond_2 replicates set to NaN
+        ``"both_one"``  -- one random replicate from each condition set to NaN
+        ``"all_full"``  -- all replicates in both conditions set to NaN
+
+    seed : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    pl.DataFrame
+        New DataFrame with Float64 columns; affected values replaced by null.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(df)
+
+    # Work on a numpy copy to apply masks, then rebuild polars at the end.
+    all_cols = cond_1 + cond_2
+    arr = df.select(all_cols).cast(pl.Float64).to_numpy(allow_copy=True).copy()
+    c1_idx = list(range(len(cond_1)))
+    c2_idx = list(range(len(cond_1), len(cond_1) + len(cond_2)))
+
+    available = list(range(n))
+    rng.shuffle(available)
+    pos = 0
+
+    for pattern, count in patterns:
+        if count <= 0:
+            continue
+        if pos + count > len(available):
+            raise ValueError(
+                f"Not enough rows left for pattern '{pattern}': "
+                f"need {count}, have {len(available) - pos}"
+            )
+        rows = available[pos : pos + count]
+        pos += count
+
+        if pattern == "c1_full":
+            arr[np.ix_(rows, c1_idx)] = np.nan
+        elif pattern == "c2_full":
+            arr[np.ix_(rows, c2_idx)] = np.nan
+        elif pattern == "c1_one":
+            for r in rows:
+                col = rng.choice(c1_idx)
+                arr[r, col] = np.nan
+        elif pattern == "c2_one":
+            for r in rows:
+                col = rng.choice(c2_idx)
+                arr[r, col] = np.nan
+        elif pattern == "c1_two":
+            for r in rows:
+                cols = rng.choice(c1_idx, size=2, replace=False)
+                arr[r, cols] = np.nan
+        elif pattern == "c2_two":
+            for r in rows:
+                cols = rng.choice(c2_idx, size=2, replace=False)
+                arr[r, cols] = np.nan
+        elif pattern == "both_one":
+            for r in rows:
+                arr[r, rng.choice(c1_idx)] = np.nan
+                arr[r, rng.choice(c2_idx)] = np.nan
+        elif pattern == "all_full":
+            arr[rows, :] = np.nan
+        else:
+            raise ValueError(f"Unknown missingness pattern: '{pattern}'")
+
+    # Rebuild: replace float columns in original df, converting NaN -> null
+    new_cols = [
+        pl.Series(col, arr[:, i]).fill_nan(None).alias(col)
+        for i, col in enumerate(all_cols)
+    ]
+    return df.with_columns(new_cols)
+
+
 if __name__ == "__main__":
     ds = make_balanced_dataset()
     print("Dataset summary:", ds.summary())

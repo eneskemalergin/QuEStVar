@@ -46,12 +46,16 @@ class TestValidatePolars:
         df = _make_proteomics_df(50, 3)
         nan_arr = np.full(50, np.nan, dtype=np.float64)
         df = df.with_columns([
-            pl.Series("na1", nan_arr),
-            pl.Series("na2", nan_arr),
-            pl.Series("na3", nan_arr),
+            pl.Series("na1", nan_arr).fill_nan(None),
+            pl.Series("na2", nan_arr).fill_nan(None),
+            pl.Series("na3", nan_arr).fill_nan(None),
         ])
-        with pytest.raises(ValueError, match="all NaN"):
-            validate_and_extract(df, ["s0", "s1", "s2"], ["na1", "na2", "na3"], cv_thr=0.15)
+        # All-NaN rows pass validation; the CV filter in _api.py excludes them.
+        s1, s2, pids, c1, c2, meta = validate_and_extract(
+            df, ["s0", "s1", "s2"], ["na1", "na2", "na3"], cv_thr=0.15
+        )
+        assert s2.shape == (50, 3)
+        assert np.all(np.isnan(s2))
 
     def test_cv_thr_zero(self):
         df = _make_proteomics_df(50, 3)

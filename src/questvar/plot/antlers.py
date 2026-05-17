@@ -25,7 +25,7 @@ def antlers(
     figsize: tuple[float, float] = (12, 9),
     protein_ids: list[str] | None = None,
     top_n: int | None = None,
-    label_col: str = "protein_id",
+    label_col: str = "feature_id",
     rasterize_scatters: bool = True,
     show: bool = False,
     save_path: str | Path | None = None,
@@ -45,9 +45,9 @@ def antlers(
     figsize : tuple
         Figure dimensions ``(width, height)`` in inches.
     protein_ids : list of str, optional
-        Explicit protein IDs to annotate on the plot.
+        Explicit feature IDs to annotate on the plot.
     top_n : int, optional
-        Annotate the top N most significant proteins per status category.
+        Annotate the top N most significant features per status category.
         Ignored if ``protein_ids`` is given.
     label_col : str
         Column in ``results.data`` to use as annotation text.

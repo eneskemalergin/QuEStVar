@@ -89,11 +89,6 @@ def _from_array(
     s1 = arr[:, idx1].copy()
     s2 = arr[:, idx2].copy()
 
-    if np.all(np.isnan(s1), axis=1).any():
-        raise ValueError("Some proteins have all NaN in cond_1")
-    if np.all(np.isnan(s2), axis=1).any():
-        raise ValueError("Some proteins have all NaN in cond_2")
-
     protein_ids = np.arange(arr.shape[0], dtype=np.int64)
     return s1, s2, protein_ids, list(cond_1), list(cond_2), {}
 
@@ -128,13 +123,20 @@ def _from_polars(
     if cv_thr <= 0:
         raise ValueError(f"cv_thr must be > 0, got {cv_thr}")
 
-    protein_ids = data.select("protein_id").to_series().to_numpy()
+    intensity_cols = set(cond_1) | set(cond_2)
+    id_col: str | None = None
+    for candidate in ("feature_id", "protein_id"):
+        if candidate in data.columns:
+            id_col = candidate
+            break
+    if id_col is None:
+        extra = [c for c in data.columns if c not in intensity_cols]
+        id_col = extra[0] if extra else None
+    if id_col is not None:
+        feature_ids = data.select(id_col).to_series().to_numpy()
+    else:
+        feature_ids = np.arange(data.shape[0], dtype=np.int64)
     s1_arr = data.select(cond_1).to_numpy().astype(np.float64)
     s2_arr = data.select(cond_2).to_numpy().astype(np.float64)
 
-    if np.all(np.isnan(s1_arr), axis=1).any():
-        raise ValueError("Some proteins have all NaN in cond_1")
-    if np.all(np.isnan(s2_arr), axis=1).any():
-        raise ValueError("Some proteins have all NaN in cond_2")
-
-    return s1_arr, s2_arr, protein_ids, list(cond_1), list(cond_2), {}
+    return s1_arr, s2_arr, feature_ids, list(cond_1), list(cond_2), {}

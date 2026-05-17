@@ -117,7 +117,7 @@ class TestAntlersStandalone:
     def test_with_annotations(self):
         results = _make_test_results(50, 3)
         from questvar.plot import antlers
-        ids = results.data["protein_id"].to_list()[:5]
+        ids = results.data["feature_id"].to_list()[:5]
         fig = antlers(results, protein_ids=ids)
         assert hasattr(fig, "ax_main")
 
