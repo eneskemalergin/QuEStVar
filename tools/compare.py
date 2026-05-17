@@ -49,7 +49,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import polars as pl
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -448,7 +447,7 @@ def print_report(report, ds, label, eq_thr, df_thr, p_thr) -> None:
               f"{d['n_kept']:>7}{rel}")
 
     # Numeric agreement vs scipy
-    print(f"\nNumeric agreement vs scipy baseline  (max|diff| / r)")
+    print("\nNumeric agreement vs scipy baseline  (max|diff| / r)")
     print(f"{'Backend':<22}  {'log2fc':>18}  {'df_p':>18}  "
           f"{'df_adjp':>18}  {'eq_p':>18}  {'eq_adjp':>18}")
     print(SEP2)
@@ -464,13 +463,13 @@ def print_report(report, ds, label, eq_thr, df_thr, p_thr) -> None:
     # Status vs scipy
     any_diff = any(d["vs_scipy"] for d in report.values())
     if any_diff:
-        print(f"\nStatus shifts vs scipy baseline")
+        print("\nStatus shifts vs scipy baseline")
         print(SEP2)
         for name, d in report.items():
             for trans, cnt in d["vs_scipy"].items():
                 print(f"  {name:<22}  {trans}: {cnt}")
     else:
-        print(f"\n  No status shifts vs scipy baseline.")
+        print("\n  No status shifts vs scipy baseline.")
 
 
 # ---------------------------------------------------------------------------

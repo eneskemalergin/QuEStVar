@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 from numpy.typing import NDArray
 
+if TYPE_CHECKING:
+    import polars as pl
+
 
 def validate_and_extract(
-    data: object,
+    data: pl.DataFrame | np.ndarray,
     cond_1: list[str] | list[int],
     cond_2: list[str] | list[int],
-    is_log2: bool = False,
     cv_thr: float = 0.15,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], np.ndarray, list, list, dict]:
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], np.ndarray,
+    list[Any], list[Any], dict[str, Any],
+]:
     """Validate input data and extract condition arrays.
 
     Parameters
@@ -21,8 +28,6 @@ def validate_and_extract(
     cond_1, cond_2 : list of str or list of int
         Column names (for DataFrame) or indices (for ndarray) for each
         condition. Each must have at least 2 elements.
-    is_log2 : bool
-        Whether data is already log2-transformed.
     cv_thr : float
         CV threshold for filtering (must be in (0, 1)).
 
@@ -46,7 +51,7 @@ def validate_and_extract(
         raise ImportError("Polars is required for DataFrame input") from None
 
     if isinstance(data, pl.DataFrame):
-        return _from_polars(data, cond_1, cond_2, is_log2, cv_thr)
+        return _from_polars(data, cond_1, cond_2, cv_thr)
 
     raise TypeError(f"Expected pl.DataFrame or np.ndarray, got {type(data).__name__}")
 
@@ -56,7 +61,10 @@ def _from_array(
     cond_1: list[int] | list[str],
     cond_2: list[int] | list[str],
     cv_thr: float,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], np.ndarray, list, list, dict]:
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], np.ndarray,
+    list[Any], list[Any], dict[str, Any],
+]:
     arr = np.asarray(data, dtype=np.float64)
     if arr.ndim != 2:
         raise ValueError(f"Expected 2D array, got {arr.ndim}D")
@@ -91,12 +99,14 @@ def _from_array(
 
 
 def _from_polars(
-    data: object,
+    data: pl.DataFrame,
     cond_1: list[str] | list[int],
     cond_2: list[str] | list[int],
-    is_log2: bool,  # noqa: ARG001
     cv_thr: float,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], np.ndarray, list, list, dict]:
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], np.ndarray,
+    list[Any], list[Any], dict[str, Any],
+]:
 
     if not isinstance(cond_1[0], str):
         raise TypeError("cond_1 and cond_2 must be column names for DataFrame input")

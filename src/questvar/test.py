@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import polars as pl
 
@@ -10,7 +12,7 @@ def test(
     data: pl.DataFrame | np.ndarray,
     cond_1: list[str] | list[int],
     cond_2: list[str] | list[int],
-    **kwargs,
+    **kwargs: Any,
 ) -> TestResults:
     """Quick one-off equivalence test without instantiating QuestVar.
 

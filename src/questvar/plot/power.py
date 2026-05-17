@@ -38,8 +38,9 @@ Custom style::
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -93,12 +94,9 @@ def plot_power(
             fig.ax_main.set_xlabel("Custom label")
             fig.ax_cv.set_title("My CV")
     """
-    try:
-        import matplotlib.pyplot as plt
-        from matplotlib.gridspec import GridSpec
-        from matplotlib.transforms import blended_transform_factory, offset_copy
-    except ImportError as exc:
-        raise ImportError("matplotlib is required for plotting: pip install matplotlib") from exc
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec
+    from matplotlib.transforms import blended_transform_factory, offset_copy
 
     pc = config or PlotConfig()
     ci_mult = ci if ci is not None else pc.ci_multiplier
@@ -127,7 +125,7 @@ def plot_power(
             key=lambda t: t[0],
         )
         if pts:
-            xs, ys, es = zip(*pts)
+            xs, ys, es = zip(*pts, strict=True)
             lines[nr] = (list(xs), list(ys), list(es))
 
     if not lines:
@@ -173,7 +171,7 @@ def plot_power(
     # ------------------------------------------------------------------
     # Shared axis styler
     # ------------------------------------------------------------------
-    def _style(ax, xlabel: str = "", ylabel: str = "", ylabel_right: bool = False) -> None:
+    def _style(ax: Any, xlabel: str = "", ylabel: str = "", ylabel_right: bool = False) -> None:
         ax.set_facecolor(pc.ax_facecolor)
         ax.spines["top"].set_visible(False)
         if ylabel_right:
@@ -206,21 +204,19 @@ def plot_power(
     # a coherent progression (light-to-dark = fewer-to-more replicates).
     # ------------------------------------------------------------------
     n_lines = len(lines)
-    if n_lines == 1:
-        _line_colors = [pc.palette[0]]
-    else:
+    _line_colors: list[Any] = [pc.palette[0]]
+    if n_lines > 1:
         _cmap = plt.get_cmap(pc.multi_line_cmap)
-        # Sample from [0.35, 0.90] to avoid the near-white end of Blues
         _line_colors = [
             _cmap(0.35 + 0.55 * i / (n_lines - 1)) for i in range(n_lines)
         ]
 
     for idx, nr in enumerate(sorted(lines)):
-        xs, ys, es = lines[nr]
+        xvals, yvals, ervals = lines[nr]
         color = _line_colors[idx]
 
         ax_main.plot(
-            xs, ys,
+            xvals, yvals,
             color=color,
             linewidth=pc.line_width,
             marker=pc.marker,
@@ -228,9 +224,9 @@ def plot_power(
             label=str(nr),
             zorder=3,
         )
-        lo = [max(0.0, y - e * ci_mult) for y, e in zip(ys, es)]
-        hi = [min(1.0, y + e * ci_mult) for y, e in zip(ys, es)]
-        ax_main.fill_between(xs, lo, hi, color=color, alpha=pc.ci_alpha, zorder=2)
+        lo = [max(0.0, y - e * ci_mult) for y, e in zip(yvals, ervals, strict=True)]
+        hi = [min(1.0, y + e * ci_mult) for y, e in zip(yvals, ervals, strict=True)]
+        ax_main.fill_between(xvals, lo, hi, color=color, alpha=pc.ci_alpha, zorder=2)
 
     # Ideal reference line at SEI = 1 (power ceiling)
     ax_main.axhline(
@@ -257,7 +253,7 @@ def plot_power(
     # Inline badge labels for reference lines - blended transform keeps x
     # in axes-fraction space and y in data space so labels track the lines.
     _blend = blended_transform_factory(ax_main.transAxes, ax_main.transData)
-    _badge_kw = dict(
+    _badge_kw: dict[str, Any] = dict(
         transform=_blend, ha="left", va="center", fontsize=pc.annotation_fontsize,
         zorder=6, clip_on=False,
     )

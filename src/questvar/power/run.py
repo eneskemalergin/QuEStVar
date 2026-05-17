@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -79,7 +79,7 @@ def run_power_analysis(
 
     design_grid = _summarize_design_grid(run_metrics, config)
     search_results = _solve_design_targets(design_grid, config)
-    monotonicity_checks = _collect_monotonicity_checks(design_grid, config)
+    monotonicity_checks = _collect_monotonicity_checks(design_grid)
     diagnostics = {
         "used_full_pipeline": True,
         "n_design_points": len(design_points),
@@ -433,7 +433,7 @@ def _check_axis_monotonicity(rows: list[dict], axis: str) -> dict[str, str | boo
     return {"direction": direction, "is_monotone": is_monotone}
 
 
-def _collect_monotonicity_checks(design_grid: list[dict], config: PowerConfig) -> list[dict[str, str | bool]]:
+def _collect_monotonicity_checks(design_grid: list[dict]) -> list[dict[str, str | bool]]:
     checks: list[dict[str, str | bool]] = []
     axes = ["n_reps", "eq_thr", "cv_thr", "cv_mean"]
     for axis in axes:

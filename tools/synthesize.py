@@ -15,11 +15,9 @@ Pass is_log2=False when running through questvar or the ref implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
 import polars as pl
-
 
 # ---------------------------------------------------------------------------
 # Configuration

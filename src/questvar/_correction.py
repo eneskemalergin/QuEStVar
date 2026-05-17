@@ -59,10 +59,10 @@ def _holm(p: NDArray[np.float64], n: int) -> NDArray[np.float64]:
     return result
 
 
-def _hochberg(p: NDArray[np.float64], n: int) -> NDArray[np.float64]:  # noqa: ARG001
+def _hochberg(p: NDArray[np.float64], n: int) -> NDArray[np.float64]:
     m = len(p)
     order = np.argsort(p)[::-1]
-    steps = np.arange(1, m + 1)
+    steps = np.arange(n - m + 1, n + 1)
     q = np.minimum(1.0, np.minimum.accumulate(steps * p[order]))
     result = np.empty_like(p)
     result[order] = q

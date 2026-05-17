@@ -180,3 +180,62 @@ class TestValidateExtract:
 
         with pytest.raises(ValueError, match="cv_thr must be"):
             qv.test(data, cond_1=[0, 1, 2], cond_2=[3, 4, 5], cv_thr=0.0)
+
+
+class TestTestResultsSaveLoad:
+    def test_save_load_parquet_roundtrip(self, tmp_path):
+        df = _make_proteomics_data(50, 3)
+        qv = QuestVar(cv_thr=0.5)
+        original = qv.test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        loaded = _TestResults.load(str(path))
+        assert len(loaded.data) == len(original.data)
+        assert loaded.cond_1 == original.cond_1
+        assert loaded.cond_2 == original.cond_2
+        assert loaded.config.cv_thr == original.config.cv_thr
+
+
+class TestPowerResultsSaveLoad:
+    def test_save_load_parquet_roundtrip(self, tmp_path):
+        from questvar._api import PowerResults
+        from questvar.power.run import run_power_analysis
+
+        original = run_power_analysis(
+            eq_boundaries=[0.5],
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=100,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        path = tmp_path / "power.parquet"
+        original.save(str(path))
+        loaded = PowerResults.load(str(path))
+        assert len(loaded.design_grid) > 0
+        assert loaded.config.get("cv_mean") is not None
+
+    def test_save_load_meta_sidecar(self, tmp_path):
+        import json
+
+        from questvar.power.run import run_power_analysis
+
+        results = run_power_analysis(
+            eq_boundaries=[0.5],
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=100,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        path = tmp_path / "power.parquet"
+        results.save(str(path))
+        meta_path = tmp_path / "power.meta.json"
+        assert meta_path.exists()
+        with open(meta_path) as f:
+            meta = json.load(f)
+        assert "config" in meta

@@ -37,9 +37,11 @@ def main(argv: list[str] | None = None) -> None:
     p_power.add_argument("--n-jobs", type=int, help="parallel workers")
 
     p_plot = sub.add_parser("plot", help="Generate plots")
-    p_plot.add_argument("--results", help="Path to results parquet file")
+    p_plot.add_argument("--results", required=True, help="Path to results parquet file")
     p_plot.add_argument("--output", default="plot.png", help="output image")
     p_plot.add_argument("--type", default="antlers", choices=["antlers", "power"], help="type")
+
+    parser.add_argument("--version", action="version", version="questvar 0.1.0")
 
     args = parser.parse_args(argv)
 
@@ -58,12 +60,26 @@ def _cmd_test(args: argparse.Namespace) -> None:
     import polars as pl
 
     from questvar._api import QuestVar
+    from questvar._config import TestConfig
 
     cond_1 = args.cond_1.split(",")
     cond_2 = args.cond_2.split(",")
-
     data = pl.read_parquet(args.data)
-    qv = QuestVar()
+
+    config = TestConfig.from_yaml(args.config) if args.config else None
+    overrides = {}
+    if args.cv_thr is not None:
+        overrides["cv_thr"] = args.cv_thr
+    if args.p_thr is not None:
+        overrides["p_thr"] = args.p_thr
+    if args.df_thr is not None:
+        overrides["df_thr"] = args.df_thr
+    if args.eq_thr is not None:
+        overrides["eq_thr"] = args.eq_thr
+    if args.correction is not None:
+        overrides["correction"] = args.correction
+
+    qv = QuestVar(config, **overrides)
     result = qv.test(data, cond_1, cond_2)
     result.save(args.output)
     print(result.summary())
@@ -94,16 +110,20 @@ def _cmd_power(args: argparse.Namespace) -> None:
         target_power=args.target_power,
         n_jobs=args.n_jobs,
     )
-    from questvar._api import PowerResults
-    pr = PowerResults(results)
-    pr.save(args.output)
-    print(pr.summary())
+    results.save(args.output)
+    print(results.summary())
 
 
 def _cmd_plot(args: argparse.Namespace) -> None:
     if args.type == "antlers":
-        from questvar.plot.test import antlers_plot
-        antlers_plot(args.results, output=args.output)
+        from questvar._api import TestResults
+
+        tr = TestResults.load(args.results)
+        fig = tr.plot()
+        fig.savefig(args.output, dpi=150, bbox_inches="tight")
     elif args.type == "power":
-        from questvar.plot.power import power_profile_plot
-        power_profile_plot(args.results, output=args.output)
+        from questvar._api import PowerResults
+
+        pr = PowerResults.load(args.results)
+        fig = pr.plot(kind="power_profile")
+        fig.savefig(args.output, dpi=150, bbox_inches="tight")

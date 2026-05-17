@@ -30,7 +30,7 @@ With custom labels::
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -96,13 +96,8 @@ def plot_summary(
         ``fig.ax_antlers``, ``fig.ax_ma``, ``fig.ax_counts``,
         ``fig.ax_matrix``, ``fig.ax_hexbin``, ``fig.ax_legend``.
     """
-    try:
-        import matplotlib.lines as mlines
-        import matplotlib.pyplot as plt
-    except ImportError as exc:
-        raise ImportError(
-            "matplotlib is required for plotting: pip install matplotlib"
-        ) from exc
+    import matplotlib.lines as mlines
+    import matplotlib.pyplot as plt
 
     pc = config or PlotConfig()
 
@@ -184,19 +179,19 @@ def plot_summary(
     # ------------------------------------------------------------------
     # Styling helpers
     # ------------------------------------------------------------------
-    _subtitle_kw = dict(
+    _subtitle_kw: dict[str, Any] = dict(
         fontsize=title_fontsize - 4,
         fontstyle="italic",
         color=pc.title_color,
         pad=5,
     )
-    _ax_label_kw = dict(
+    _ax_label_kw: dict[str, Any] = dict(
         fontsize=title_fontsize - 5,
         color="black",
         labelpad=5,
     )
-    _tick_kw = dict(labelsize=title_fontsize - 7, pad=2)
-    _legend_kw = dict(
+    _tick_kw: dict[str, Any] = dict(labelsize=title_fontsize - 7, pad=2)
+    _legend_kw: dict[str, Any] = dict(
         fontsize=legend_fontsize - 1,
         frameon=True,
         fancybox=True,
@@ -209,13 +204,13 @@ def plot_summary(
         borderpad=0.6,
     )
     # Grid: keep alpha lighter than the power plot (dense scatter needs breathing room)
-    _grid_kw = dict(
+    _grid_kw: dict[str, Any] = dict(
         alpha=0.3,
         linestyle=pc.grid_linestyle,
         linewidth=pc.grid_linewidth,
         color=pc.grid_color,
     )
-    _box_kw = dict(
+    _box_kw: dict[str, Any] = dict(
         boxstyle="round,pad=0.5",
         facecolor=pc.annotation_box_facecolor,
         alpha=0.9,
@@ -645,8 +640,8 @@ def plot_summary(
     ax_left.axis("off")
     ax_right.axis("off")
 
-    N1_nom = len(results.cond_1)
-    N2_nom = len(results.cond_2)
+    n1_nom = len(results.cond_1)
+    n2_nom = len(results.cond_2)
 
     text_left = (
         r"$\mathbf{STATISTICAL\ TESTING\ METHODOLOGY}$" + "\n\n"
@@ -658,7 +653,7 @@ def plot_summary(
         + rf"$\mathbf{{Multiple\ Testing}}$: {correction} correction applied" + "\n"
         + rf"$\mathbf{{Significance\ Level}}$: $\alpha = {p_thr:.3f}$" + "\n\n"
         + rf"$\mathbf{{Data\ Summary}}$: {n_total:,} features analyzed" + "\n"
-        + rf"{c1}: {N1_nom} samples   {c2}: {N2_nom} samples"
+        + rf"{c1}: {n1_nom} samples   {c2}: {n2_nom} samples"
     )
     text_right = (
         r"$\mathbf{FIGURE\ PANEL\ DESCRIPTION}$" + "\n\n"

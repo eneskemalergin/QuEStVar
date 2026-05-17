@@ -13,29 +13,27 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "numpy>=2.0",
-    "polars>=1.0",
-    "scipy>=1.10",
+    "matplotlib>=3.10.9",
+    "numpy>=2.4.5",
+    "polars>=1.40.1",
+    "scipy>=1.17.1",
 ]
 
 [project.optional-dependencies]
-plots = ["matplotlib>=3.8"]
 yaml = ["pyyaml>=6.0"]
-cli = ["typer>=0.9"]
-accel = ["numba>=0.59"]
-all = ["questvar[plots,yaml,cli,accel]"]
+all = ["questvar[yaml]"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
-    "hypothesis>=6.0",
-    "ruff>=0.6",
-    "pyyaml>=6.0",
+    "hypothesis>=6.152.7",
     "mkdocs>=1.6",
     "mkdocstrings[python]>=0.26",
+    "mypy>=2.1.0",
     "pandas>=3.0.3",
+    "pytest>=9.0.3",
+    "pyyaml>=6.0.3",
+    "ruff>=0.15.13",
     "scikit-learn>=1.8.0",
-    "matplotlib>=3.10.9",
 ]
 
 [project.scripts]
@@ -43,12 +41,19 @@ questvar = "questvar._cli:main"
 
 [tool.ruff]
 target-version = "py312"
+line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "ARG"]
 
 [tool.ruff.lint.per-file-ignores]
+"src/questvar/_api.py" = ["E501"]
 "src/questvar/_cli.py" = ["E501"]
+"src/questvar/plot/*.py" = ["E501"]
+"src/questvar/plot/_config.py" = ["E501"]
+"src/questvar/plot/power.py" = ["E501"]
+"src/questvar/plot/test.py" = ["E501"]
+"src/questvar/power/run.py" = ["E501"]
 "tests/test_api.py" = ["E501"]
 "tests/test_correction.py" = ["E501"]
 "tests/test_ttest.py" = ["E501"]
@@ -59,3 +64,17 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+exclude = [
+    "ref/",
+    "dev/",
+    "real/",
+    "tmp/",
+    "tools/",
+]

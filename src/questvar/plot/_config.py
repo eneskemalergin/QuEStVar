@@ -25,7 +25,7 @@ Or override fields for your own style::
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -63,7 +63,7 @@ class PlotConfig:
     title_color: str = "#1e1e30"
     title_fontsize: int = 12
     title_fontweight: str = "semibold"
-    title_loc: str = "left"
+    title_loc: Literal["left", "center", "right"] = "left"
     """Horizontal alignment of the axis title: 'left', 'center', or 'right'."""
 
     # ------------------------------------------------------------------

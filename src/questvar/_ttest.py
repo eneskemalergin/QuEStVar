@@ -6,6 +6,27 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.special import stdtr
 
+# Named column indices for the result array returned by run_unpaired / run_paired.
+# These are the canonical 17-column layout.  Every consumer in the package reads
+# from these constants instead of bare integer literals.
+COL_N1: int = 0
+COL_N2: int = 1
+COL_LOG2FC: int = 2
+COL_AVERAGE: int = 3
+COL_DF_P: int = 4
+COL_DF_ADJP: int = 5
+COL_EQ_LO_P: int = 6
+COL_EQ_LO_ADJP: int = 7
+COL_EQ_UP_P: int = 8
+COL_EQ_UP_ADJP: int = 9
+COL_EQ_P: int = 10
+COL_EQ_ADJP: int = 11
+COL_COMB_P: int = 12
+COL_COMB_ADJP: int = 13
+COL_LOG10_P: int = 14
+COL_LOG10_ADJP: int = 15
+COL_STATUS: int = 16
+
 
 def ttest_ind(
     s1: NDArray[np.float64],

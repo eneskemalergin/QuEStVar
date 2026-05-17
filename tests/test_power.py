@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 from numpy.testing import assert_allclose
 
 from questvar._api import PowerResults
-
 from questvar.power._simulate import simulate_data
 from questvar.power.run import run_power_analysis
 

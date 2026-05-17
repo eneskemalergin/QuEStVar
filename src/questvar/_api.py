@@ -2,13 +2,30 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import polars as pl
 
 from questvar._config import TestConfig
 from questvar._cv import cv_numpy, make_selection_indicator
-from questvar._ttest import run_paired, run_unpaired
+from questvar._ttest import (
+    COL_AVERAGE,
+    COL_COMB_ADJP,
+    COL_COMB_P,
+    COL_DF_ADJP,
+    COL_DF_P,
+    COL_EQ_ADJP,
+    COL_EQ_P,
+    COL_LOG2FC,
+    COL_LOG10_ADJP,
+    COL_LOG10_P,
+    COL_N1,
+    COL_N2,
+    COL_STATUS,
+    run_paired,
+    run_unpaired,
+)
 from questvar._validate import validate_and_extract
 
 
@@ -23,7 +40,7 @@ class QuestVar:
         Override individual config fields (cv_thr, p_thr, etc.).
     """
 
-    def __init__(self, config: TestConfig | dict | None = None, **kwargs):
+    def __init__(self, config: TestConfig | dict[str, Any] | None = None, **kwargs: Any) -> None:
         if config is None:
             self.config = TestConfig(**kwargs)
         elif isinstance(config, dict):
@@ -42,7 +59,7 @@ class QuestVar:
         data: pl.DataFrame | np.ndarray,
         cond_1: list[str] | list[int],
         cond_2: list[str] | list[int],
-        **overrides,
+        **overrides: Any,
     ) -> TestResults:
         config = replace(self.config, **overrides) if overrides else self.config
 
@@ -50,7 +67,6 @@ class QuestVar:
             data,
             cond_1,
             cond_2,
-            config.is_log2,
             config.cv_thr,
         )
 
@@ -92,24 +108,24 @@ class QuestVar:
 
         result_dict = {
             "protein_id": pl.Series("protein_id", protein_ids[keep]),
-            "n1": result_arr[:, 0],
-            "n2": result_arr[:, 1],
-            "log2fc": result_arr[:, 2],
-            "average": result_arr[:, 3],
-            "df_p": result_arr[:, 4],
-            "df_adjp": result_arr[:, 5],
-            "eq_p": result_arr[:, 10],
-            "eq_adjp": result_arr[:, 11],
-            "comb_p": result_arr[:, 12],
-            "comb_adjp": result_arr[:, 13],
-            "log10_pval": result_arr[:, 14],
-            "log10_adj_pval": result_arr[:, 15],
+            "n1": result_arr[:, COL_N1],
+            "n2": result_arr[:, COL_N2],
+            "log2fc": result_arr[:, COL_LOG2FC],
+            "average": result_arr[:, COL_AVERAGE],
+            "df_p": result_arr[:, COL_DF_P],
+            "df_adjp": result_arr[:, COL_DF_ADJP],
+            "eq_p": result_arr[:, COL_EQ_P],
+            "eq_adjp": result_arr[:, COL_EQ_ADJP],
+            "comb_p": result_arr[:, COL_COMB_P],
+            "comb_adjp": result_arr[:, COL_COMB_ADJP],
+            "log10_pval": result_arr[:, COL_LOG10_P],
+            "log10_adj_pval": result_arr[:, COL_LOG10_ADJP],
         }
-        result_dict["status"] = pl.Series("status", result_arr[:, 16].astype(np.int8))
+        result_dict["status"] = pl.Series("status", result_arr[:, COL_STATUS].astype(np.int8))
         results_df = pl.DataFrame(result_dict)
 
         status_all = np.full(s1_arr.shape[0], np.nan)
-        status_all[keep] = result_arr[:, -1]
+        status_all[keep] = result_arr[:, COL_STATUS]
         info_df = pl.DataFrame(
             {
                 "protein_id": pl.Series("protein_id", protein_ids),
@@ -131,7 +147,7 @@ class QuestVar:
         self,
         data: pl.DataFrame,
         condition_map: dict[str, list[str]],
-        **overrides,
+        **overrides: Any,
     ) -> dict[tuple[str, str], TestResults]:
         from itertools import combinations
 
@@ -140,7 +156,7 @@ class QuestVar:
             for (c1, s1), (c2, s2) in combinations(condition_map.items(), 2)
         }
 
-    def power_analysis(self, **kwargs) -> PowerResults:
+    def power_analysis(self, **kwargs: Any) -> PowerResults:
         from questvar.power.run import run_power_analysis
 
         return run_power_analysis(**kwargs)
@@ -163,7 +179,9 @@ class TestResults:
         Per-protein CV filter status and overall status.
     """
 
-    def __init__(self, data, config, cond_1, cond_2, info):
+    __test__ = False
+
+    def __init__(self, data: pl.DataFrame, config: TestConfig, cond_1: list[Any], cond_2: list[Any], info: pl.DataFrame) -> None:
         self.data = data
         self.config = config
         self.cond_1 = cond_1
@@ -171,24 +189,49 @@ class TestResults:
         self.info = info
 
     def plot(self, **kwargs):
-        try:
-            from questvar.plot.test import plot_summary
-        except ImportError:
-            raise ImportError(
-                "Plotting requires matplotlib. Install with: uv add questvar[plots]"
-            ) from None
+        from questvar.plot.test import plot_summary
+
         return plot_summary(self, **kwargs)
 
     def save(self, path: str) -> None:
+        import json
+
         suffix = Path(path).suffix
+        stem = Path(path).with_suffix("")
         if suffix == ".parquet":
             self.data.write_parquet(path)
+            self.info.write_parquet(f"{stem}.info.parquet")
         elif suffix == ".csv":
             self.data.write_csv(path)
+            self.info.write_csv(f"{stem}.info.csv")
         elif suffix == ".tsv":
             self.data.write_csv(path, separator="\t")
+            self.info.write_csv(f"{stem}.info.tsv", separator="\t")
         else:
             raise ValueError(f"Unknown format: {suffix}")
+        meta: dict[str, Any] = {
+            "config": self.config.to_dict(),
+            "cond_1": self.cond_1,
+            "cond_2": self.cond_2,
+        }
+        with open(f"{stem}.meta.json", "w") as f:
+            json.dump(meta, f, indent=2)
+
+    @classmethod
+    def load(cls, path: str) -> TestResults:
+        import json
+
+        from questvar._config import TestConfig
+
+        p = Path(path)
+        suffix = p.suffix
+        stem = p.with_suffix("")
+        data = pl.read_parquet(path)
+        info = pl.read_parquet(f"{stem}.info{suffix}")
+        with open(f"{stem}.meta.json") as f:
+            meta = json.load(f)
+        config = TestConfig.from_dict(meta["config"])
+        return cls(data, config, meta["cond_1"], meta["cond_2"], info)
 
     def summary(self) -> str:
         counts = self.data.group_by("status").len()
@@ -225,7 +268,7 @@ class PowerResults:
         Search outcomes for supported optimization axes.
     """
 
-    def __init__(self, payload: dict):
+    def __init__(self, payload: dict[str, Any]) -> None:
         self.config = payload.get("config", {})
         self.design_grid = payload.get("design_grid", [])
         self.run_metrics = payload.get("run_metrics", [])
@@ -246,9 +289,8 @@ class PowerResults:
     def save(self, path: str) -> None:
         import json
 
-        import polars as pl
-
         suffix = Path(path).suffix
+        stem = Path(path).with_suffix("")
         if suffix == ".parquet":
             df = pl.DataFrame(self.design_grid)
             df.write_parquet(path)
@@ -263,8 +305,40 @@ class PowerResults:
                 json.dump(self.to_dict(), f, indent=2)
         else:
             raise ValueError(f"Unknown format: {suffix}")
+        with open(f"{stem}.meta.json", "w") as f:
+            json.dump({"config": self.config}, f, indent=2)
 
-    def to_dict(self) -> dict:
+    @classmethod
+    def load(cls, path: str) -> PowerResults:
+        import json
+
+        p = Path(path)
+        suffix = p.suffix
+        stem = p.with_suffix("")
+        if suffix == ".parquet":
+            df = pl.read_parquet(path)
+        elif suffix == ".csv":
+            df = pl.read_csv(path)
+        elif suffix == ".tsv":
+            df = pl.read_csv(path, separator="\t")
+        else:
+            raise ValueError(f"Unknown format: {suffix}")
+        design_grid = df.to_dicts()
+        config = {}
+        meta_path = f"{stem}.meta.json"
+        if Path(meta_path).exists():
+            with open(meta_path) as f:
+                meta = json.load(f)
+            config = meta.get("config", {})
+        return cls({
+            "config": config,
+            "design_grid": design_grid,
+            "run_metrics": [],
+            "search_results": [],
+            "diagnostics": {},
+        })
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             "config": self.config,
             "design_grid": self.design_grid,
@@ -273,9 +347,7 @@ class PowerResults:
             "diagnostics": self.diagnostics,
         }
 
-    def to_frame(self, level: str = "design_grid"):
-        import polars as pl
-
+    def to_frame(self, level: str = "design_grid") -> pl.DataFrame:
         if level not in self.to_dict():
             raise ValueError(f"Unknown PowerResults level: {level}")
         payload = self.to_dict()[level]
@@ -283,13 +355,13 @@ class PowerResults:
             return pl.DataFrame([payload])
         return pl.DataFrame(payload)
 
-    def optimal_design(self, search_for: str = "n_reps") -> dict | None:
+    def optimal_design(self, search_for: str = "n_reps") -> dict[str, Any] | None:
         for row in self.search_results:
             if row["search_for"] == search_for:
                 return row
         return None
 
-    def compare(self, other, level: str = "design_grid") -> list[dict]:
+    def compare(self, other: PowerResults | dict[str, Any], level: str = "design_grid") -> list[dict[str, Any]]:
         if hasattr(other, "to_dict"):
             other_payload = other.to_dict()
         elif isinstance(other, dict):
@@ -330,17 +402,11 @@ class PowerResults:
             )
         return comparison
 
-    def plot(self, kind: str = "power_profile", **kwargs):
-        try:
-            from questvar.plot.power import (
-                plot_power
-            )
-        except ImportError:
-            raise ImportError(
-                "Plotting requires matplotlib. Install with: uv add questvar[plots]"
-            ) from None
-        plotters = {
-            "plot_power": plot_power
+    def plot(self, kind: str = "power_profile", **kwargs: Any) -> Any:
+        from questvar.plot.power import plot_power
+
+        plotters: dict[str, Any] = {
+            "power_profile": plot_power
         }
         if kind not in plotters:
             raise ValueError(f"Unknown PowerResults plot kind: {kind}")
