@@ -189,7 +189,7 @@ class TestResults:
         self.info = info
 
     def plot(self, **kwargs):
-        from questvar.plot.test import plot_summary
+        from questvar.plot.summary import plot_summary
 
         return plot_summary(self, **kwargs)
 

@@ -104,3 +104,52 @@ class TestPlotPower:
                                 "diagnostics": {}})
         with pytest.raises(ValueError, match="Unknown PowerResults"):
             results.plot(kind="invalid_kind")
+
+
+class TestAntlersStandalone:
+    def test_returns_figure(self):
+        results = _make_test_results(50, 3)
+        from questvar.plot import antlers
+        fig = antlers(results)
+        assert fig is not None
+        assert hasattr(fig, "ax_main")
+
+    def test_with_annotations(self):
+        results = _make_test_results(50, 3)
+        from questvar.plot import antlers
+        ids = results.data["protein_id"].to_list()[:5]
+        fig = antlers(results, protein_ids=ids)
+        assert hasattr(fig, "ax_main")
+
+    def test_with_top_n(self):
+        results = _make_test_results(50, 3)
+        from questvar.plot import antlers
+        fig = antlers(results, top_n=3)
+        assert hasattr(fig, "ax_main")
+
+    def test_save_png(self, tmp_path: Path):
+        results = _make_test_results(50, 3)
+        from questvar.plot import antlers
+        path = tmp_path / "antlers.png"
+        antlers(results, save_path=str(path))
+        assert path.exists()
+
+    def test_cond_labels(self):
+        results = _make_test_results(50, 3)
+        from questvar.plot import antlers
+        fig = antlers(results, cond_1_label="Tumor", cond_2_label="Normal")
+        assert hasattr(fig, "ax_main")
+
+
+class TestPlotNaming:
+    def test_antlers_import(self):
+        from questvar.plot import antlers
+        assert callable(antlers)
+
+    def test_summary_import(self):
+        from questvar.plot import summary
+        assert callable(summary)
+
+    def test_power_profile_import(self):
+        from questvar.plot import power_profile
+        assert callable(power_profile)

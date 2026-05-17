@@ -4,8 +4,8 @@ Usage
 -----
 Use the defaults directly::
 
-    from questvar.plot import PlotConfig, plot_power
-    plot_power(results)
+    from questvar.plot import PlotConfig, power_profile
+    power_profile(results)
 
 Or override fields for your own style::
 
@@ -19,7 +19,7 @@ Or override fields for your own style::
         grid_color="#dddddd",
         palette=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"],
     )
-    plot_power(results, config=cfg)
+    power_profile(results, config=cfg)
 """
 
 from __future__ import annotations
@@ -148,11 +148,38 @@ class PlotConfig:
     threshold_linewidth: float = 2.0
     """Stroke width applied to all equivalence/difference threshold lines."""
 
+    threshold_label_fontsize: int = 10
+    """Font size for inline threshold value labels."""
+
     # ------------------------------------------------------------------
     # Annotation box (bottom text panels in summary plot)
     # ------------------------------------------------------------------
     annotation_box_facecolor: str = "#f8f9fa"
     annotation_box_edgecolor: str = "#343a40"
+
+    # ------------------------------------------------------------------
+    # Protein annotation labels (on data points in Antler's plot)
+    # ------------------------------------------------------------------
+    annotate_fontsize: int = 9
+    annotate_fontweight: str = "bold"
+    annotate_bbox_alpha: float = 0.85
+    annotate_edge_width: float = 1.5
+    annotate_arrow_width: float = 1.2
+    annotate_arrow_alpha: float = 0.7
+    annotate_max_chars: int = 15
+
+    annotate_box_colors: dict[str, dict[str, str]] = field(
+        default_factory=lambda: {
+            "Unexplained":    {"bg": "#F5F5F5", "edge": "#C2C0C0"},
+            "Upregulated":    {"bg": "#FFEBEE", "edge": "#780000"},
+            "Downregulated":  {"bg": "#FFF3E0", "edge": "#e36414"},
+            "Equivalent":     {"bg": "#E3F2FD", "edge": "#003049"},
+        }
+    )
+    """Per-status background and edge colours for annotation label boxes."""
+
+    annotate_top_n: int = 5
+    """Default number of top proteins per status to annotate when top_n=True."""
 
     # ------------------------------------------------------------------
     # Colour palette (lines drawn in palette order, jco-inspired)
