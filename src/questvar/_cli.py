@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Any
 
 import numpy as np
 
@@ -86,30 +87,38 @@ def _cmd_test(args: argparse.Namespace) -> None:
 
 
 def _cmd_power(args: argparse.Namespace) -> None:
+    from questvar._config import PowerConfig
     from questvar.power.run import run_power_analysis
 
-    eq_b = (
-        np.array([float(x) for x in args.eq_boundaries.split(",")])
-        if args.eq_boundaries else None
-    )
-    n_reps = (
-        [int(x) for x in args.n_reps_list.split(",")]
-        if args.n_reps_list else None
-    )
-    cv_m = (
-        [float(x) for x in args.cv_mean_list.split(",")]
-        if args.cv_mean_list else None
-    )
+    if args.config:
+        cfg = PowerConfig.from_yaml(args.config)
+        kw: dict[str, Any] = {
+            "eq_boundaries": cfg.eq_boundaries,
+            "n_reps_list": cfg.n_reps_grid,
+            "cv_mean_list": cfg.cv_mean_grid,
+            "cv_thr_list": list(cfg.cv_thr_grid),
+            "n_prts": cfg.n_prts,
+            "n_iterations": cfg.n_iterations,
+            "target_power": cfg.target_power,
+            "random_seed": cfg.random_seed,
+        }
+    else:
+        kw = {}
 
-    results = run_power_analysis(
-        eq_boundaries=eq_b,
-        n_reps_list=n_reps,
-        cv_mean_list=cv_m,
-        n_prts=args.n_prts,
-        n_iterations=args.n_iterations,
-        target_power=args.target_power,
-        n_jobs=args.n_jobs,
-    )
+    if args.eq_boundaries is not None:
+        kw["eq_boundaries"] = np.array([float(x) for x in args.eq_boundaries.split(",")])
+    if args.n_reps_list is not None:
+        kw["n_reps_list"] = [int(x) for x in args.n_reps_list.split(",")]
+    if args.cv_mean_list is not None:
+        kw["cv_mean_list"] = [float(x) for x in args.cv_mean_list.split(",")]
+    if args.n_jobs is not None:
+        kw["n_jobs"] = args.n_jobs
+
+    kw.setdefault("n_prts", args.n_prts)
+    kw.setdefault("n_iterations", args.n_iterations)
+    kw.setdefault("target_power", args.target_power)
+
+    results = run_power_analysis(**kw)
     results.save(args.output)
     print(results.summary())
 

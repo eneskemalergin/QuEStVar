@@ -313,7 +313,7 @@ def plot_power(
     # ------------------------------------------------------------------
     ax_cv.boxplot(
         cv_sample,
-        vert=True,
+        orientation="vertical",
         patch_artist=True,
         widths=0.5,
         showmeans=True,

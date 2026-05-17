@@ -106,5 +106,10 @@ def _qvalue_estimate(p: NDArray[np.float64], n: int) -> float:
     sorted_p = np.sort(p)
     counts = n - np.searchsorted(sorted_p, lambdas, side="right")
     pi0_lambda = np.minimum(counts / (n * (1.0 - lambdas)), 1.0)
+    # Smoothed estimate via cubic polynomial, clipped to [0, 1].
     fit = Polynomial.fit(lambdas, pi0_lambda, 3)
-    return min(max(fit(lambdas[-1]), 0.0), 1.0)
+    # Evaluate at the maximum lambda, with fallback to median if fit is unreliable.
+    result = fit(lambdas[-1])
+    if result <= 0.01:
+        result = float(np.median(pi0_lambda))
+    return min(max(result, 0.0), 1.0)

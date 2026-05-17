@@ -68,12 +68,13 @@ def run_power_analysis(
     # This avoids creating QuestVar and deserializing PowerConfig once per iteration.
     tasks = [(point, config.to_dict()) for point in design_points]
 
-    if n_jobs is None or n_jobs > 1:
-        n_workers = n_jobs if n_jobs is not None else mp.cpu_count()
-        with mp.Pool(n_workers) as pool:
-            batches = pool.map(_simulate_design_point, tasks)
-    else:
+    if n_jobs is None or n_jobs < 1:
+        n_jobs = mp.cpu_count()
+    if n_jobs == 1:
         batches = [_simulate_design_point(t) for t in tasks]
+    else:
+        with mp.Pool(n_jobs) as pool:
+            batches = pool.map(_simulate_design_point, tasks)
 
     run_metrics = [m for batch in batches for m in batch]
 
@@ -84,7 +85,7 @@ def run_power_analysis(
         "used_full_pipeline": True,
         "n_design_points": len(design_points),
         "n_runs": len(run_metrics),
-        "worker_count": n_jobs if n_jobs not in (None, 0) else mp.cpu_count(),
+        "worker_count": n_jobs if n_jobs is not None else mp.cpu_count(),
         "seed_policy": (
             "run_id sequence" if config.random_seed is None else f"base_seed+run_id from {config.random_seed}"
         ),

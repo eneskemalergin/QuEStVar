@@ -19,15 +19,14 @@ def simulate_data(
 
     cv_mu is the target mean CV as a **ratio** (e.g. 0.275 for 27.5%).
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
-    mean_dist = np.random.normal(int_mu, int_sd, n_prts)
+    mean_dist = rng.normal(int_mu, int_sd, n_prts)
     if int_log2:
         mean_dist = np.power(2.0, mean_dist)
     mean_dist = mean_dist[:, np.newaxis]
 
-    cv_dist = np.random.gamma(cv_k, cv_theta, n_prts)
+    cv_dist = rng.gamma(cv_k, cv_theta, n_prts)
     cv_dist = cv_dist * cv_mu / np.mean(cv_dist)  # scale so mean CV == cv_mu
     cv_dist = cv_dist[:, np.newaxis]
 
@@ -37,5 +36,5 @@ def simulate_data(
     sd_dist = mean_dist * cv_dist
     mu_ln = np.log(mean_dist**2 / np.sqrt(sd_dist**2 + mean_dist**2))
     sigma_ln = np.sqrt(np.log1p(cv_dist**2))
-    data = np.random.lognormal(mu_ln, sigma_ln, (n_prts, n_reps))
+    data = rng.lognormal(mu_ln, sigma_ln, (n_prts, n_reps))
     return data.astype(np.float64)

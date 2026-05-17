@@ -38,12 +38,9 @@ Usage
 from __future__ import annotations
 
 import argparse
-import importlib
-import importlib.util
 import sys
 import time
 import tracemalloc
-import types
 import warnings
 from pathlib import Path
 from typing import Any
@@ -55,36 +52,15 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-REF_DIR   = REPO_ROOT / "ref"
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-# ---------------------------------------------------------------------------
-# nbpy shim so ref/tests.py can `from nbpy import utils`
-# ---------------------------------------------------------------------------
-
-def _install_nbpy_shim() -> None:
-    if "nbpy" in sys.modules:
-        return
-    spec = importlib.util.spec_from_file_location("nbpy.utils", REF_DIR / "utils.py")
-    ref_utils = importlib.util.module_from_spec(spec)       # type: ignore[arg-type]
-    spec.loader.exec_module(ref_utils)                      # type: ignore[union-attr]
-    pkg = types.ModuleType("nbpy")
-    pkg.utils = ref_utils                                   # type: ignore[attr-defined]
-    sys.modules["nbpy"]       = pkg
-    sys.modules["nbpy.utils"] = ref_utils
-
-
 def _import_ref_tests():
-    _install_nbpy_shim()
-    if "ref_tests" not in sys.modules:
-        spec = importlib.util.spec_from_file_location("ref_tests", REF_DIR / "tests.py")
-        mod  = importlib.util.module_from_spec(spec)        # type: ignore[arg-type]
-        spec.loader.exec_module(mod)                        # type: ignore[union-attr]
-        sys.modules["ref_tests"] = mod
-    return sys.modules["ref_tests"]
+    import importlib
+
+    return importlib.import_module("ref.tests")
 
 
 # ---------------------------------------------------------------------------
