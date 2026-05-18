@@ -89,12 +89,14 @@ class TestRMultipleTestingReference:
         p = np.sort(rng.uniform(0.0005, 0.999, 256).astype(np.float64))
         expected = run_r_p_adjust_reference(p, method="qvalue")
         actual = p_adjust(p, "qvalue")
+        bh = p_adjust(p, "fdr")
         # QuEStVar uses an internal q-value approximation rather than the full
-        # Bioconductor smoother, so this is a profile-comparison test rather
-        # than an exact reference-equality test.
+        # Bioconductor smoother implementation, so this is a profile-comparison
+        # test rather than exact reference equality.
         assert actual.shape == expected.shape
         assert np.all(actual >= 0.0) and np.all(actual <= 1.0)
         assert np.all(np.diff(actual) >= -1e-12)
+        assert np.max(np.abs(actual - expected)) < np.max(np.abs(bh - expected))
         assert_allclose(actual, expected, atol=3e-2, rtol=3e-2)
 
 

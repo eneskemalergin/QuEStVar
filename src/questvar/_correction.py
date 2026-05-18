@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-from numpy.polynomial import Polynomial
 from numpy.typing import NDArray
+from scipy.interpolate import make_smoothing_spline
 
 VALID_METHODS: set[str | None] = {
     None,
@@ -15,6 +15,8 @@ VALID_METHODS: set[str | None] = {
     "BY",
     "qvalue",
 }
+
+_QVALUE_DEFAULT_LAMBDA = np.arange(0.05, 0.96, 0.05, dtype=np.float64)
 
 
 def p_adjust(
@@ -92,24 +94,49 @@ def _fdr_by(p: NDArray[np.float64], n: int) -> NDArray[np.float64]:
 
 def _qvalue(p: NDArray[np.float64], n: int) -> NDArray[np.float64]:
     m = len(p)
-    pi0 = 1.0 if n < 100 else _qvalue_estimate(p, n)
-    order = np.argsort(p)
-    raw = np.minimum(pi0 * n * p[order] / np.arange(1, m + 1), 1.0)
-    qvals = np.minimum.accumulate(raw[::-1])[::-1]
+    if m == 0:
+        return p.copy()
+
+    pi0 = _qvalue_estimate(p)
+    order = np.argsort(p)[::-1]
+    ranks = np.arange(m, 0, -1, dtype=np.float64)
+    base = p[order] * float(n) / ranks
+    qvals = pi0 * np.minimum(1.0, np.minimum.accumulate(base))
     result = np.empty_like(p)
     result[order] = qvals
     return result
 
 
-def _qvalue_estimate(p: NDArray[np.float64], n: int) -> float:
-    lambdas = np.arange(0, 0.9, 0.01)
+def _qvalue_estimate(p: NDArray[np.float64]) -> float:
+    lambdas = _QVALUE_DEFAULT_LAMBDA
+    m = len(p)
+    if m == 0:
+        return 1.0
+
     sorted_p = np.sort(p)
-    counts = n - np.searchsorted(sorted_p, lambdas, side="right")
-    pi0_lambda = np.minimum(counts / (n * (1.0 - lambdas)), 1.0)
-    # Smoothed estimate via cubic polynomial, clipped to [0, 1].
-    fit = Polynomial.fit(lambdas, pi0_lambda, 3)
-    # Evaluate at the maximum lambda, with fallback to median if fit is unreliable.
-    result = fit(lambdas[-1])
-    if result <= 0.01:
-        result = float(np.median(pi0_lambda))
-    return min(max(result, 0.0), 1.0)
+    counts = m - np.searchsorted(sorted_p, lambdas, side="right")
+    pi0_lambda = counts / (m * (1.0 - lambdas))
+
+    try:
+        pi0_smooth = make_smoothing_spline(lambdas, pi0_lambda)(lambdas)
+        result = float(pi0_smooth[-1])
+    except Exception:
+        result = _qvalue_estimate_bootstrap(pi0_lambda, counts, lambdas, m)
+
+    if not np.isfinite(result) or result <= 0.0:
+        result = _qvalue_estimate_bootstrap(pi0_lambda, counts, lambdas, m)
+
+    return float(np.clip(result, np.finfo(np.float64).tiny, 1.0))
+
+
+def _qvalue_estimate_bootstrap(
+    pi0_lambda: NDArray[np.float64],
+    counts: NDArray[np.float64],
+    lambdas: NDArray[np.float64],
+    m: int,
+) -> float:
+    min_pi0 = float(np.quantile(pi0_lambda, 0.1))
+    mse = (counts / (m**2 * (1.0 - lambdas) ** 2)) * (1.0 - counts / m) + (
+        pi0_lambda - min_pi0
+    ) ** 2
+    return float(min(np.min(pi0_lambda[mse == np.min(mse)]), 1.0))
