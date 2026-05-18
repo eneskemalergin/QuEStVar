@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import time
+from math import sqrt as _sqrt
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -474,16 +475,39 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
         # Convergence metric: coefficient of variation of SEI across iterations.
         # Values < 0.10 indicate stable estimates at the current iteration count.
         sei_convergence = sei_sd / sei_mean if sei_mean > 0.0 else float("nan")
-        # Power per iteration: continuous score capped at 1.
-        # Matches the reference calculate_power(simulated_sei, target_sei) formula:
-        #   power_i = min(1, 1 - max(0, target_sei - sei_i))
-        # Gives 1.0 when sei >= target_sei; decreases linearly below it.
-        target_sei = first["target_sei"]
-        power_values = np.array(
-            [min(1.0, 1.0 - max(0.0, target_sei - s)) for s in sei_values],
-            dtype=np.float64,
-        )
-        power_mean = float(np.mean(power_values))
+        # Power: how close is SEI to the effective target?
+        #
+        # Formula (from ref/tests.py, restored):
+        #   effective_target = min(target_sei, sei_ceiling)
+        #   sei_ceiling      = 1 - cv_mean
+        #   power            = min(1, 1 - max(0, effective_target - sei_mean))
+        #
+        # Why two-level target?
+        #   sei_ceiling  = 1 - cv_mean is the CV-adjusted reference anchor: at
+        #     this CV, pushing SEI much above (1 - cv_mean) requires many extra
+        #     replicates for diminishing return. It is NOT a hard physical limit
+        #     (SEI can exceed it), but it is a practical calibration point.
+        #   target_sei   = the user's stated recovery goal (e.g. 0.80).
+        #   effective_target = min of the two: use the user's goal unless it is
+        #     above the CV anchor, in which case cap at the anchor so high-CV
+        #     platforms are not penalised for a goal their CV makes impractical.
+        #
+        # Interpretation:
+        #   power = 1.0  when sei_mean >= effective_target (goal met)
+        #   power < 1.0  when sei_mean < effective_target  (gap = target - sei)
+        #   power = 1 - effective_target when sei_mean = 0 (floor)
+        #
+        # Power is always >= SEI because effective_target < 1. Both SEI and
+        # Power grow with more replicates, but Power reaches 1.0 first (when
+        # SEI hits the effective_target), while SEI continues toward 1.0.
+        cv_mean_val = float(first["cv_mean"])
+        target_sei_val = float(first["target_sei"])
+        sei_ceiling_val = max(1.0 - cv_mean_val, 0.10)
+        effective_target = min(target_sei_val, sei_ceiling_val)
+        power_mean = min(1.0, 1.0 - max(0.0, effective_target - sei_mean))
+        n_iter = len(sei_values)
+        # power_se via the delta method: d(power)/d(sei) = 1, so power_se = sei_se.
+        power_se = float(sei_sd / _sqrt(max(n_iter, 1)))
         design_grid.append(
             {
                 "parameter": first["parameter"],
@@ -507,7 +531,7 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
                 "sei_q95": float(np.quantile(sei_values, 0.95)),
                 "sei_ceiling": 1.0 - float(first["cv_mean"]),
                 "power": power_mean,
-                "power_se": float(np.std(power_values, ddof=0) / np.sqrt(len(rows))),
+                "power_se": power_se,
                 "equiv_rate": float(np.mean(equiv_rates)),
                 "ns_rate": float(np.mean(ns_rates)),
                 "diff_rate": float(np.mean(diff_rates)),
@@ -537,7 +561,7 @@ def _solve_design_targets(design_grid: list[dict], config: PowerConfig) -> list[
         if not rows:
             continue
         rows = sorted(rows, key=lambda row: row[axis])
-        feasible_rows = [row for row in rows if row["power"] >= config.target_power]
+        feasible_rows = [row for row in rows if row["feasible"]]
         if direction == "max":
             solution = feasible_rows[-1] if feasible_rows else None
         else:

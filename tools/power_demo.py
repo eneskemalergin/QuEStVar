@@ -333,6 +333,7 @@ def part0_foundations() -> None:
         ("n_reps",   "Replicates per condition",      "The most controllable lever."                     ),
         ("eq_thr",   "Equivalence boundary (log2FC)",  "Defines what 'close enough' means."               ),
         ("cv_mean",  "Mean coefficient of variation",  "Data precision; property of your platform/prep."  ),
+        ("cv_thr",   "CV outlier filter threshold",    "Removes features with CV > threshold (100-150 %)."),
         ("delta",    "True effect size (log2FC)",       "How different are the two conditions, really?"    ),
         ("n_prts",   "Feature count",                   "Affects multiple-testing correction (FDR)."       ),
     ]
@@ -377,9 +378,23 @@ def part0_foundations() -> None:
         "In QuEStVar, cv_mean is the mean CV you observe in your actual data. "
         "The cv_thr parameter filters extreme outlier features whose CV "
         "exceeds the threshold; the intended range is 100-150 % (1.0-1.5), "
-        "not a tight precision filter. Equivalence threshold (eq_thr) and "
-        "effect size (delta) are in log2 fold-change units: log2FC 0.5 is a "
-        "41 % intensity difference, log2FC 1.0 is a 2-fold change."
+        "not a tight precision filter.\n\n"
+        "Three related concepts govern design evaluation:\n"
+        "  SEI (sei_mean) -- absolute fraction of CV-filtered equivalent features\n"
+        "    correctly recovered by TOST. Denominator is tested features only;\n"
+        "    excluded features do not penalise the score. Range [0, 1].\n"
+        "  SEI ceiling (sei_ceiling = 1 - cv_mean) -- CV-adjusted reference\n"
+        "    anchor. At this CV, pushing SEI well above (1 - cv_mean) requires\n"
+        "    many extra replicates for diminishing return. Not a hard physical\n"
+        "    limit, but a practical calibration point.\n"
+        "  Power -- relative progress toward the effective target, which is\n"
+        "    min(target_sei, sei_ceiling). Formula:\n"
+        "      power = min(1, 1 - max(0, effective_target - sei_mean))\n"
+        "    power = 1 when SEI reaches the effective target; power < 1 while\n"
+        "    below it. Power is always >= SEI. A design is feasible when\n"
+        "    power >= target_power (default 0.80).\n\n"
+        "Equivalence threshold (eq_thr) and effect size (delta) are in log2 "
+        "fold-change units: log2FC 0.5 is a 41 % difference, log2FC 1.0 is 2x."
     )
 
 
@@ -428,10 +443,13 @@ def part1_first_analysis() -> None:
 
     ok(f"SEI = {sei:.3f}  |  Power = {power:.3f}  |  Excluded by CV filter = {excl:.1%}")
     note(
-        f"With 5 replicates at 20 % CV and eq_thr = 0.5, the model recovers "
-        f"{sei:.1%} of equivalent features as equivalent. The power score of "
-        f"{power:.3f} {'meets' if power >= 0.80 else 'does NOT meet'} the 80 % target. "
-        f"{excl:.1%} of features were excluded because their CV exceeded the filter."
+        f"With 5 replicates at 20 % CV and eq_thr = 0.5, the study recovers "
+        f"{sei:.1%} of equivalent features (SEI). The SEI ceiling is "
+        f"1 - 0.20 = 0.80, which equals target_sei, so effective_target = 0.80. "
+        f"Power = {power:.3f} = 1 - (0.80 - {sei:.3f}) = how close SEI is to "
+        f"that effective target; power = 1 only when SEI reaches 0.80. "
+        f"{excl:.1%} of features were removed by the CV filter. "
+        f"The n_reps sweep in Part 2 finds the minimum viable design."
     )
 
 
@@ -783,7 +801,7 @@ def part8_nprts_sweep() -> None:
         eq_boundaries=np.array([0.5]),
         n_reps_list=[8],
         cv_mean_list=[0.20],
-        n_prts_list=[200, 500, 1000, 3000, 8000],
+        n_prts_list=[200, 500, 1000, 3000, 8000, 15000],
         n_prts=1000,
         n_iterations=15,
         target_sei=0.80,
@@ -928,7 +946,10 @@ def part9_optimal_finder() -> None:
         "These are the conservative recommendations given your supplied grids. "
         "To get finer resolution, shrink the step size between grid values. "
         "The 'nearest infeasible' value shows how close the boundary is; if it "
-        "is adjacent to the solution, the design is operating near its edge."
+        "is adjacent to the solution, the design is operating near its edge. "
+        "The cv_mean search uses the first value of n_reps_list as fixed n_reps. "
+        "If it reports NOT FOUND, re-run a standalone cv_mean sweep at a higher "
+        "fixed n_reps to find the maximum tolerable CV for that sample size."
     )
 
 
@@ -1164,9 +1185,9 @@ def part13_full_example() -> None:
     import multiprocessing as mp
     t = running(f"full study design analysis  (using {mp.cpu_count()} cores)")
     results = run_power_analysis(
-        eq_boundaries=np.array([0.3, 0.4, 0.5, 0.7]),
+        eq_boundaries=np.array([0.5, 0.3, 0.4, 0.7]),
         n_reps_list=[5, 8, 10, 15, 20],
-        cv_mean_list=[0.18, 0.22, 0.28],
+        cv_mean_list=[0.22, 0.18, 0.28],
         delta_list=[0.0, 0.3, 0.5, 0.8, 1.0, 1.5],
         n_prts=4000,
         df_thr=1.0,
@@ -1194,17 +1215,14 @@ def part13_full_example() -> None:
     subsection("Optimal design search")
     print_search(results.search_results)
 
-    subsection("SEI pivot: n_reps × eq_thr  (cv_mean = 0.22)")
-    # Filter design_grid to cv_mean ≈ 0.22 for the pivot
-    sub_grid = [r for r in results.design_grid if abs(r["cv_mean"] - 0.22) < 0.01]
-    # Build mini pivot manually for the demo
+    subsection("SEI pivot: n_reps x eq_thr  (cv_mean = 0.22)")
     tbl = results.design_table(row_axis="eq_thr", col_axis="n_reps", metric="sei_mean")
     print_pivot(tbl, "eq_thr", "n_reps", "sei_mean")
 
-    subsection("Effect-size profile  (n_reps=default, eq_thr=0.5)")
+    subsection("Effect-size profile  (n_reps=5, eq_thr=0.5, cv_mean=0.22)")
     delta_rows = [
         r for r in results.design_grid
-        if r["parameter"] == "delta"
+        if r["parameter"] == "delta" and abs(r["eq_thr"] - 0.5) < 0.01
     ]
     if delta_rows:
         print(
