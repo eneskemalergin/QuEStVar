@@ -103,6 +103,10 @@ is_paired: false
 allow_missing: false
 ```
 
+`is_log2` controls whether QuEStVar should log-transform the measurement matrix internally. The default is `is_log2: false`, which means QuEStVar expects raw positive intensities. In that mode, CV is computed directly on the raw values, then the matrix is clipped at `1e-300` and transformed with `log2` for the statistical tests. Set `is_log2: true` only when the input already contains log2-scale values.
+
+The practical rule is strict: the user must decide whether the matrix is raw or already log2. QuEStVar does not infer that safely. CV is always computed on the raw scale. If you provide raw data, QuEStVar uses it directly for CV and then log2-transforms for testing. If you provide log2 data, QuEStVar back-transforms with `2 ** x` for CV only, while the statistical tests continue to run on the original log2 values.
+
 ## CLI
 
 The package exposes a `questvar` command.
@@ -112,8 +116,11 @@ questvar test \
   --data input.parquet \
   --cond-1 Control_1,Control_2,Control_3 \
   --cond-2 Treated_1,Treated_2,Treated_3 \
+    --input-scale raw \
   --output results.parquet
 ```
+
+Use `--input-scale log2` when the file already contains log2-scale measurements.
 
 Power analysis:
 

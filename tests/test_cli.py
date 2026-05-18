@@ -79,6 +79,54 @@ class TestCliTest:
               "--output", str(out)])
         assert out.exists()
 
+    def test_with_input_scale_log2(self, tmp_path: Path):
+        input_path = _make_test_data(tmp_path)
+        log_input_path = tmp_path / "input_log2.parquet"
+        pl.read_parquet(input_path).with_columns(
+            [pl.col(f"sample_{i:02d}").log(base=2) for i in range(6)]
+        ).write_parquet(log_input_path)
+
+        out = tmp_path / "out.parquet"
+        main([
+            "test", "--data", str(log_input_path),
+            "--cond-1", "sample_00,sample_01,sample_02",
+            "--cond-2", "sample_03,sample_04,sample_05",
+            "--input-scale", "log2",
+            "--output", str(out),
+        ])
+        assert out.exists()
+
+        cli_results = TestResults.load(str(out))
+        api_results = QuestVar(cv_thr=1.0, is_log2=True).test(
+            pl.read_parquet(log_input_path),
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        _assert_testresults_equal(api_results, cli_results)
+
+    def test_input_scale_log2_matches_is_log2_alias(self, tmp_path: Path):
+        input_path = _make_test_data(tmp_path)
+        log_input_path = tmp_path / "input_log2.parquet"
+        pl.read_parquet(input_path).with_columns(
+            [pl.col(f"sample_{i:02d}").log(base=2) for i in range(6)]
+        ).write_parquet(log_input_path)
+
+        out_scale = tmp_path / "out_scale.parquet"
+        out_alias = tmp_path / "out_alias.parquet"
+        base_args = [
+            "test", "--data", str(log_input_path),
+            "--cond-1", "sample_00,sample_01,sample_02",
+            "--cond-2", "sample_03,sample_04,sample_05",
+        ]
+
+        main([*base_args, "--input-scale", "log2", "--output", str(out_scale)])
+        main([*base_args, "--is-log2", "--output", str(out_alias)])
+
+        _assert_testresults_equal(
+            TestResults.load(str(out_scale)),
+            TestResults.load(str(out_alias)),
+        )
+
     def test_save_csv(self, tmp_path: Path):
         input_path = _make_test_data(tmp_path)
         out = tmp_path / "out.csv"

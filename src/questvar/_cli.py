@@ -26,7 +26,21 @@ def main(argv: list[str] | None = None) -> None:
     p_test.add_argument("--eq-thr", type=float, help="Equivalence boundary (fold-change units)")
     p_test.add_argument("--correction", help="Multiple testing correction method (fdr, bonferroni, or none)")
     p_test.add_argument("--allow-missing", action="store_true", help="Allow missing values when computing CV")
-    p_test.add_argument("--is-log2", action="store_true", help="Treat input intensities as already log2-transformed")
+    scale_group = p_test.add_mutually_exclusive_group()
+    scale_group.add_argument(
+        "--input-scale",
+        choices=["raw", "log2"],
+        help=(
+            "Declare whether the input matrix is raw positive intensities or already log2-transformed. "
+            "CV is always computed on the raw scale. Log2 inputs are back-transformed for CV only, "
+            "while the statistical tests run on log2 values."
+        ),
+    )
+    scale_group.add_argument(
+        "--is-log2",
+        action="store_true",
+        help="Deprecated alias for --input-scale log2",
+    )
     p_test.add_argument("--is-paired", action="store_true", help="Use paired statistical testing")
     p_test.add_argument("--var-equal", action="store_true", help="Assume equal variance between conditions")
 
@@ -94,7 +108,7 @@ def _cmd_test(args: argparse.Namespace) -> None:
         overrides["correction"] = args.correction
     if args.allow_missing:
         overrides["allow_missing"] = True
-    if args.is_log2:
+    if args.input_scale == "log2" or args.is_log2:
         overrides["is_log2"] = True
     if args.is_paired:
         overrides["is_paired"] = True

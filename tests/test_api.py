@@ -198,6 +198,40 @@ class TestQuestVar:
             assert_allclose(raw_result.data[col].to_numpy(), log_result.data[col].to_numpy())
         assert raw_result.data["status"].to_list() == log_result.data["status"].to_list()
 
+    def test_log2_declared_input_uses_raw_scale_for_cv_filtering(self):
+        raw = np.array(
+            [
+                [10.0, 20.0, 40.0, 10.0, 20.0, 40.0],
+                [100.0, 101.0, 130.0, 100.0, 101.0, 130.0],
+            ],
+            dtype=np.float64,
+        )
+        log_data = np.log2(raw)
+
+        raw_result = QuestVar(cv_thr=0.5, is_log2=False, correction=None).test(
+            raw,
+            cond_1=[0, 1, 2],
+            cond_2=[3, 4, 5],
+        )
+        log_result = QuestVar(cv_thr=0.5, is_log2=True, correction=None).test(
+            log_data,
+            cond_1=[0, 1, 2],
+            cond_2=[3, 4, 5],
+        )
+
+        assert raw_result.data["feature_id"].to_list() == [1]
+        assert log_result.data["feature_id"].to_list() == [1]
+        assert raw_result.info["s1_cv_status"].to_list() == log_result.info["s1_cv_status"].to_list()
+        assert raw_result.info["s2_cv_status"].to_list() == log_result.info["s2_cv_status"].to_list()
+        assert_allclose(raw_result.data["log2fc"].to_numpy(), log_result.data["log2fc"].to_numpy())
+        assert raw_result.data["status"].to_list() == log_result.data["status"].to_list()
+
+    def test_log2_input_too_large_for_raw_scale_cv_raises_clear_error(self):
+        data = np.array([[2000.0, 2001.0, 2002.0, 2000.0, 2001.0, 2002.0]], dtype=np.float64)
+
+        with pytest.raises(ValueError, match="too large to back-transform"):
+            QuestVar(cv_thr=0.5, is_log2=True).test(data, cond_1=[0, 1, 2], cond_2=[3, 4, 5])
+
 
 class TestTestConvenience:
     def test_test_function(self):

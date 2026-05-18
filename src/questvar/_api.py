@@ -74,6 +74,26 @@ def _validate_frame_columns(
         )
 
 
+def _to_raw_scale_for_cv(arr: np.ndarray, *, is_log2: bool) -> np.ndarray:
+    if not is_log2:
+        return arr
+
+    try:
+        with np.errstate(over="raise", invalid="ignore"):
+            raw = np.exp2(arr)
+    except FloatingPointError as exc:
+        raise ValueError(
+            "log2 input contains values too large to back-transform for raw-scale CV computation"
+        ) from exc
+
+    finite_mask = ~np.isnan(arr)
+    if not np.all(np.isfinite(raw[finite_mask])):
+        raise ValueError(
+            "log2 input contains values too large to back-transform for raw-scale CV computation"
+        )
+    return raw
+
+
 _TEST_RESULTS_DATA_COLUMNS = (
     "feature_id",
     "n1",
@@ -151,8 +171,14 @@ class QuestVar:
             config.cv_thr,
         )
 
-        s1_cv = cv_numpy(s1_arr, ignore_nan=config.allow_missing)
-        s2_cv = cv_numpy(s2_arr, ignore_nan=config.allow_missing)
+        s1_cv = cv_numpy(
+            _to_raw_scale_for_cv(s1_arr, is_log2=config.is_log2),
+            ignore_nan=config.allow_missing,
+        )
+        s2_cv = cv_numpy(
+            _to_raw_scale_for_cv(s2_arr, is_log2=config.is_log2),
+            ignore_nan=config.allow_missing,
+        )
         s1_ps = make_selection_indicator(s1_cv, config.cv_thr)
         s2_ps = make_selection_indicator(s2_cv, config.cv_thr)
         keep = (s1_ps > 0) & (s2_ps > 0)

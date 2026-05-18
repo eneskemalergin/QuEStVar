@@ -145,6 +145,29 @@ class TestRunUnpaired:
         assert_allclose(result[0, COL_LOG2FC], 1.0, atol=1e-12)
         assert result[0, COL_STATUS] == 0
 
+    def test_epsilon_gap_between_eq_and_df_thresholds_preserves_unexplained_band(self):
+        s1 = np.full((3, 4), 10.0, dtype=np.float64)
+        s2 = np.array(
+            [
+                [9.51, 9.51, 9.51, 9.51],
+                [9.49995, 9.49995, 9.49995, 9.49995],
+                [8.99, 8.99, 8.99, 8.99],
+            ],
+            dtype=np.float64,
+        )
+        result = run_unpaired(s1, s2, eq_thr=0.5, df_thr=0.5001, p_thr=0.05, correction=None)
+        assert result[0, COL_STATUS] == 1
+        assert 0.5 < result[1, COL_LOG2FC] < 0.5001
+        assert result[1, COL_STATUS] == 0
+        assert result[2, COL_STATUS] == -1
+
+    def test_strict_p_threshold_can_produce_zero_significant_features(self):
+        rng = np.random.default_rng(42)
+        s1 = rng.normal(18.0, 0.15, (24, 4))
+        s2 = rng.normal(18.0, 0.15, (24, 4))
+        result = run_unpaired(s1, s2, eq_thr=0.5, df_thr=1.0, p_thr=1e-12, correction="holm")
+        assert np.all(result[:, COL_STATUS] == 0)
+
     def test_one_non_nan_replicate_row_does_not_crash(self):
         s1 = np.array([[10.0, np.nan, np.nan], [10.0, 10.1, 9.9]], dtype=np.float64)
         s2 = np.array([[10.0, np.nan, np.nan], [9.7, 9.8, 9.9]], dtype=np.float64)
@@ -190,6 +213,22 @@ class TestRunPaired:
         result = run_paired(s1, s2, eq_thr=0.5, df_thr=1.0, p_thr=0.05, correction=None)
         assert_allclose(result[:, COL_LOG2FC], [0.5, 1.0], atol=1e-12)
         assert np.all(result[:, COL_STATUS] == 0)
+
+    def test_epsilon_gap_between_eq_and_df_thresholds_is_strict_for_paired_status(self):
+        s1 = np.full((3, 4), 10.0, dtype=np.float64)
+        s2 = np.array(
+            [
+                [9.51, 9.51, 9.51, 9.51],
+                [9.49995, 9.49995, 9.49995, 9.49995],
+                [8.99, 8.99, 8.99, 8.99],
+            ],
+            dtype=np.float64,
+        )
+        result = run_paired(s1, s2, eq_thr=0.5, df_thr=0.5001, p_thr=0.05, correction=None)
+        assert result[0, COL_STATUS] == 1
+        assert 0.5 < result[1, COL_LOG2FC] < 0.5001
+        assert result[1, COL_STATUS] == 0
+        assert result[2, COL_STATUS] == -1
 
 
 class TestPropertyRunUnpaired:
