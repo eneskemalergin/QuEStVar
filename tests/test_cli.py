@@ -203,6 +203,51 @@ class TestCliPower:
         assert out.exists()
 
 
+class TestCliPlot:
+    def test_antlers_plot_from_saved_test_results(self, tmp_path: Path):
+        input_path = _make_test_data(tmp_path)
+        results_path = tmp_path / "results.parquet"
+        plot_path = tmp_path / "antlers.png"
+
+        main([
+            "test",
+            "--data", str(input_path),
+            "--cond-1", "sample_00,sample_01,sample_02",
+            "--cond-2", "sample_03,sample_04,sample_05",
+            "--output", str(results_path),
+        ])
+        main([
+            "plot",
+            "--results", str(results_path),
+            "--type", "antlers",
+            "--output", str(plot_path),
+        ])
+
+        assert plot_path.exists()
+        assert plot_path.stat().st_size > 0
+
+    def test_power_plot_from_saved_power_results(self, tmp_path: Path):
+        results_path = tmp_path / "power.parquet"
+        plot_path = tmp_path / "power.png"
+
+        main(["power", "--eq-boundaries", "0.5",
+              "--n-reps-list", "5",
+              "--cv-mean-list", "0.20",
+              "--n-features", "100",
+              "--n-iterations", "2",
+              "--n-jobs", "1",
+              "--output", str(results_path)])
+        main([
+            "plot",
+            "--results", str(results_path),
+            "--type", "power",
+            "--output", str(plot_path),
+        ])
+
+        assert plot_path.exists()
+        assert plot_path.stat().st_size > 0
+
+
 class TestCliHelp:
     def test_version(self, tmp_path: Path):
         input_path = _make_test_data(tmp_path)

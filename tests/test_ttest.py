@@ -29,6 +29,27 @@ def matched_float_matrices(draw):
     return s1, s2
 
 
+@st.composite
+def valid_tost_params(draw):
+    eq_thr = draw(st.floats(min_value=0.05, max_value=2.0, allow_nan=False, allow_infinity=False))
+    df_thr = draw(
+        st.floats(
+            min_value=eq_thr + 1e-4,
+            max_value=eq_thr + 2.0,
+            allow_nan=False,
+            allow_infinity=False,
+        )
+    )
+    p_thr = draw(st.floats(min_value=1e-6, max_value=0.5, allow_nan=False, allow_infinity=False))
+    correction = draw(st.sampled_from([None, "fdr", "holm"]))
+    return {
+        "eq_thr": float(eq_thr),
+        "df_thr": float(df_thr),
+        "p_thr": float(p_thr),
+        "correction": correction,
+    }
+
+
 class TestTtestInd:
     def test_vs_scipy(self):
         rng = np.random.default_rng(42)
@@ -88,6 +109,60 @@ class TestTtestRel:
         p_sp = [sp_ttest_rel(s1[i], s2[i])[1] for i in range(20)]
         assert_allclose(t, t_sp, atol=1e-12)
         assert_allclose(p, p_sp, atol=1e-12)
+
+
+class TestPropertyTtestInd:
+    @settings(deadline=None, max_examples=40)
+    @given(matched_float_matrices(), st.booleans())
+    def test_output_ranges_and_shape(self, matrices, equal_var):
+        s1, s2 = matrices
+        t_stat, p_val, df = ttest_ind(s1, s2, equal_var=equal_var)
+
+        assert t_stat.shape == (s1.shape[0],)
+        assert p_val.shape == (s1.shape[0],)
+        assert df.shape == (s1.shape[0],)
+        assert not np.any(np.isnan(t_stat))
+        assert np.all(np.isfinite(df))
+        assert np.all(df > 0)
+        assert np.all((p_val >= 0.0) & (p_val <= 1.0))
+
+    @settings(deadline=None, max_examples=40)
+    @given(matched_float_matrices(), st.booleans())
+    def test_swapping_inputs_flips_t_and_preserves_two_sided_pvalues(self, matrices, equal_var):
+        s1, s2 = matrices
+        forward_t, forward_p, forward_df = ttest_ind(s1, s2, equal_var=equal_var)
+        reverse_t, reverse_p, reverse_df = ttest_ind(s2, s1, equal_var=equal_var)
+
+        assert_allclose(forward_t, -reverse_t, atol=1e-10, rtol=1e-10)
+        assert_allclose(forward_p, reverse_p, atol=1e-10, rtol=1e-10)
+        assert_allclose(forward_df, reverse_df, atol=1e-10, rtol=1e-10)
+
+
+class TestPropertyTtestRel:
+    @settings(deadline=None, max_examples=40)
+    @given(matched_float_matrices())
+    def test_output_ranges_and_shape(self, matrices):
+        s1, s2 = matrices
+        t_stat, p_val, df = ttest_rel(s1, s2)
+
+        assert t_stat.shape == (s1.shape[0],)
+        assert p_val.shape == (s1.shape[0],)
+        assert df.shape == (s1.shape[0],)
+        assert not np.any(np.isnan(t_stat))
+        assert np.all(np.isfinite(df))
+        assert np.all(df == (s1.shape[1] - 1))
+        assert np.all((p_val >= 0.0) & (p_val <= 1.0))
+
+    @settings(deadline=None, max_examples=40)
+    @given(matched_float_matrices())
+    def test_swapping_inputs_flips_t_and_preserves_two_sided_pvalues(self, matrices):
+        s1, s2 = matrices
+        forward_t, forward_p, forward_df = ttest_rel(s1, s2)
+        reverse_t, reverse_p, reverse_df = ttest_rel(s2, s1)
+
+        assert_allclose(forward_t, -reverse_t, atol=1e-10, rtol=1e-10)
+        assert_allclose(forward_p, reverse_p, atol=1e-10, rtol=1e-10)
+        assert_allclose(forward_df, reverse_df, atol=0.0, rtol=0.0)
 
 
 class TestRunUnpaired:
@@ -257,10 +332,10 @@ class TestRunPaired:
 
 class TestPropertyRunUnpaired:
     @settings(deadline=None, max_examples=40)
-    @given(matched_float_matrices())
-    def test_output_ranges_and_shape(self, matrices):
+    @given(matched_float_matrices(), valid_tost_params())
+    def test_output_ranges_and_shape(self, matrices, params):
         s1, s2 = matrices
-        result = run_unpaired(s1, s2, correction="fdr")
+        result = run_unpaired(s1, s2, **params)
         assert result.shape == (s1.shape[0], 17)
         assert np.all(result[:, 0] == s1.shape[1])
         assert np.all(result[:, 1] == s2.shape[1])
@@ -271,11 +346,11 @@ class TestPropertyRunUnpaired:
         assert np.all(np.isin(result[:, COL_STATUS], [-1.0, 0.0, 1.0]))
 
     @settings(deadline=None, max_examples=40)
-    @given(matched_float_matrices())
-    def test_swapping_inputs_preserves_pvalues_and_flips_log2fc(self, matrices):
+    @given(matched_float_matrices(), valid_tost_params())
+    def test_swapping_inputs_preserves_pvalues_and_flips_log2fc(self, matrices, params):
         s1, s2 = matrices
-        forward = run_unpaired(s1, s2, correction="holm")
-        reverse = run_unpaired(s2, s1, correction="holm")
+        forward = run_unpaired(s1, s2, **params)
+        reverse = run_unpaired(s2, s1, **params)
 
         assert_allclose(forward[:, COL_LOG2FC], -reverse[:, COL_LOG2FC], atol=1e-10, rtol=1e-10)
         assert_allclose(forward[:, 4], reverse[:, 4], atol=1e-10, rtol=1e-10)
@@ -293,10 +368,10 @@ class TestPropertyRunUnpaired:
 
 class TestPropertyRunPaired:
     @settings(deadline=None, max_examples=40)
-    @given(matched_float_matrices())
-    def test_output_ranges_and_shape(self, matrices):
+    @given(matched_float_matrices(), valid_tost_params())
+    def test_output_ranges_and_shape(self, matrices, params):
         s1, s2 = matrices
-        result = run_paired(s1, s2, correction="fdr")
+        result = run_paired(s1, s2, **params)
         assert result.shape == (s1.shape[0], 17)
         assert np.all(result[:, 0] == s1.shape[1])
         assert np.all(result[:, 1] == s1.shape[1])
@@ -307,11 +382,11 @@ class TestPropertyRunPaired:
         assert np.all(np.isin(result[:, COL_STATUS], [-1.0, 0.0, 1.0]))
 
     @settings(deadline=None, max_examples=40)
-    @given(matched_float_matrices())
-    def test_swapping_inputs_preserves_pvalues_and_flips_log2fc(self, matrices):
+    @given(matched_float_matrices(), valid_tost_params())
+    def test_swapping_inputs_preserves_pvalues_and_flips_log2fc(self, matrices, params):
         s1, s2 = matrices
-        forward = run_paired(s1, s2, correction="holm")
-        reverse = run_paired(s2, s1, correction="holm")
+        forward = run_paired(s1, s2, **params)
+        reverse = run_paired(s2, s1, **params)
 
         assert_allclose(forward[:, COL_LOG2FC], -reverse[:, COL_LOG2FC], atol=1e-10, rtol=1e-10)
         assert_allclose(forward[:, 4], reverse[:, 4], atol=1e-10, rtol=1e-10)

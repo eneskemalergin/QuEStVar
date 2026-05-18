@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 import pytest
@@ -171,6 +172,18 @@ def _make_power_row(
     }
 
 
+def _constant_line_positions(ax, *, axis: str) -> list[float]:
+    positions: list[float] = []
+    for line in ax.lines:
+        xdata = np.asarray(line.get_xdata(), dtype=float)
+        ydata = np.asarray(line.get_ydata(), dtype=float)
+        if axis == "x" and xdata.size > 0 and np.allclose(xdata, xdata[0], equal_nan=True):
+            positions.append(float(xdata[0]))
+        if axis == "y" and ydata.size > 0 and np.allclose(ydata, ydata[0], equal_nan=True):
+            positions.append(float(ydata[0]))
+    return positions
+
+
 class TestPlotSummary:
     def test_returns_figure(self):
         results = _make_test_results(24, 3)
@@ -234,6 +247,40 @@ class TestPlotSummary:
         assert len(fig.ax_antlers.collections) == 1
         assert len(fig.ax_ma.collections) == 1
         assert fig.ax_antlers.get_xlabel() == "log₂ Fold Change (Control vs Treatment)"
+
+    def test_threshold_lines_remain_visible_at_exact_boundaries(self):
+        results = _make_manual_test_results(
+            rows=[
+                _make_result_row("eq_pos", status=0, log2fc=0.5),
+                _make_result_row("eq_neg", status=0, log2fc=-0.5),
+                _make_result_row("df_pos", status=0, log2fc=1.0),
+                _make_result_row("df_neg", status=0, log2fc=-1.0),
+            ],
+        )
+
+        fig = results.plot(show_excluded=False)
+
+        antler_x = _constant_line_positions(fig.ax_antlers, axis="x")
+        antler_y = _constant_line_positions(fig.ax_antlers, axis="y")
+        ma_y = _constant_line_positions(fig.ax_ma, axis="y")
+
+        for expected in [0.0, 0.5, -0.5, 1.0, -1.0]:
+            assert any(np.isclose(pos, expected) for pos in antler_x)
+            assert any(np.isclose(pos, expected) for pos in ma_y)
+        for expected in [0.0, np.log10(results.config.p_thr), -np.log10(results.config.p_thr)]:
+            assert any(np.isclose(pos, expected) for pos in antler_y)
+
+        antler_xlim = fig.ax_antlers.get_xlim()
+        antler_ylim = fig.ax_antlers.get_ylim()
+        ma_ylim = fig.ax_ma.get_ylim()
+
+        assert antler_xlim[0] <= -results.config.df_thr <= antler_xlim[1]
+        assert antler_xlim[0] <= results.config.df_thr <= antler_xlim[1]
+        assert antler_ylim[0] <= np.log10(results.config.p_thr) <= antler_ylim[1]
+        assert antler_ylim[0] <= -np.log10(results.config.p_thr) <= antler_ylim[1]
+        assert ma_ylim[0] <= -results.config.df_thr <= ma_ylim[1]
+        assert ma_ylim[0] <= results.config.df_thr <= ma_ylim[1]
+        plt.close(fig)
 
 
 class TestPlotPower:
@@ -390,6 +437,34 @@ class TestAntlersStandalone:
         assert len(fig.ax_main.collections) == 1
         assert any(text.get_text() == "eq_0" for text in fig.ax_main.texts)
 
+    def test_threshold_lines_match_config_boundaries(self):
+        results = _make_manual_test_results(
+            rows=[
+                _make_result_row("eq_pos", status=0, log2fc=0.5),
+                _make_result_row("eq_neg", status=0, log2fc=-0.5),
+                _make_result_row("df_pos", status=0, log2fc=1.0),
+                _make_result_row("df_neg", status=0, log2fc=-1.0),
+            ],
+        )
+        from questvar.plot import antlers
+
+        fig = antlers(results)
+        x_lines = _constant_line_positions(fig.ax_main, axis="x")
+        y_lines = _constant_line_positions(fig.ax_main, axis="y")
+
+        for expected in [0.0, 0.5, -0.5, 1.0, -1.0]:
+            assert any(np.isclose(pos, expected) for pos in x_lines)
+        for expected in [0.0, np.log10(results.config.p_thr), -np.log10(results.config.p_thr)]:
+            assert any(np.isclose(pos, expected) for pos in y_lines)
+
+        xlim = fig.ax_main.get_xlim()
+        ylim = fig.ax_main.get_ylim()
+        assert xlim[0] <= -results.config.df_thr <= xlim[1]
+        assert xlim[0] <= results.config.df_thr <= xlim[1]
+        assert ylim[0] <= np.log10(results.config.p_thr) <= ylim[1]
+        assert ylim[0] <= -np.log10(results.config.p_thr) <= ylim[1]
+        plt.close(fig)
+
 
 class TestPlotNaming:
     def test_antlers_import(self):
@@ -403,3 +478,4 @@ class TestPlotNaming:
     def test_power_profile_import(self):
         from questvar.plot import power_profile
         assert callable(power_profile)
+

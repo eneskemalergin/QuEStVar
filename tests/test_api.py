@@ -22,6 +22,60 @@ def _make_proteomics_data(n_prts=100, n_reps=3):
     return pl.DataFrame(data)
 
 
+def _assert_testresults_roundtrip_equal(left: _TestResults, right: _TestResults) -> None:
+    assert left.cond_1 == right.cond_1
+    assert left.cond_2 == right.cond_2
+    assert left.config == right.config
+    assert left.data.columns == right.data.columns
+    assert right.info.columns == left.info.columns
+    assert left.data["feature_id"].to_list() == right.data["feature_id"].to_list()
+    assert left.info["feature_id"].to_list() == right.info["feature_id"].to_list()
+    assert left.data["status"].to_list() == right.data["status"].to_list()
+    assert left.info["s1_cv_status"].to_list() == right.info["s1_cv_status"].to_list()
+    assert left.info["s2_cv_status"].to_list() == right.info["s2_cv_status"].to_list()
+    assert_allclose(left.info["status"].to_numpy(), right.info["status"].to_numpy(), equal_nan=True)
+
+    numeric_data_columns = [
+        "n1",
+        "n2",
+        "log2fc",
+        "average",
+        "df_p",
+        "df_adjp",
+        "eq_p",
+        "eq_adjp",
+        "comb_p",
+        "comb_adjp",
+        "log10_pval",
+        "log10_adj_pval",
+    ]
+    for column in numeric_data_columns:
+        assert_allclose(left.data[column].to_numpy(), right.data[column].to_numpy())
+
+
+def _make_powerresults_with_extras() -> PowerResults:
+    return PowerResults(
+        {
+            "config": {"cv_mean": 0.2, "target_power": 0.8},
+            "design_grid": [
+                {
+                    "parameter": "eq_thr",
+                    "value": 0.5,
+                    "n_reps": 5,
+                    "eq_thr": 0.5,
+                    "cv_mean": 0.2,
+                    "cv_thr": 1.0,
+                    "power": 0.81,
+                    "sei_mean": 0.84,
+                }
+            ],
+            "run_metrics": [{"run_id": 0, "power": 0.81}],
+            "search_results": [{"search_for": "n_reps", "value": 5}],
+            "diagnostics": {"runtime_seconds": 1.23},
+        }
+    )
+
+
 class TestQuestVar:
     def test_init_defaults(self):
         qv = QuestVar()
@@ -152,6 +206,48 @@ class TestQuestVar:
             ("group_b", "group_c"),
         }
         assert all(isinstance(value, _TestResults) for value in results.values())
+
+    def test_compare_all_pairs_matches_direct_pairwise_calls(self):
+        df = _make_proteomics_data(30, 3)
+        condition_map = {
+            "group_a": ["sample_00", "sample_01"],
+            "group_b": ["sample_02", "sample_03"],
+            "group_c": ["sample_04", "sample_05"],
+        }
+        qv = QuestVar(cv_thr=0.5, correction=None)
+
+        pairwise = qv.compare_all_pairs(df, condition_map)
+
+        expected_ab = qv.test(df, condition_map["group_a"], condition_map["group_b"])
+        expected_ac = qv.test(df, condition_map["group_a"], condition_map["group_c"])
+        expected_bc = qv.test(df, condition_map["group_b"], condition_map["group_c"])
+
+        _assert_testresults_roundtrip_equal(pairwise[("group_a", "group_b")], expected_ab)
+        _assert_testresults_roundtrip_equal(pairwise[("group_a", "group_c")], expected_ac)
+        _assert_testresults_roundtrip_equal(pairwise[("group_b", "group_c")], expected_bc)
+
+    def test_compare_all_pairs_propagates_overrides_to_each_result(self):
+        df = _make_proteomics_data(40, 3)
+        condition_map = {
+            "group_a": ["sample_00", "sample_01"],
+            "group_b": ["sample_02", "sample_03"],
+            "group_c": ["sample_04", "sample_05"],
+        }
+        qv = QuestVar(cv_thr=0.5, correction="fdr")
+
+        pairwise = qv.compare_all_pairs(df, condition_map, cv_thr=10.0, correction=None)
+
+        for (left_name, right_name), result in pairwise.items():
+            direct = qv.test(
+                df,
+                condition_map[left_name],
+                condition_map[right_name],
+                cv_thr=10.0,
+                correction=None,
+            )
+            assert result.config.cv_thr == 10.0
+            assert result.config.correction is None
+            _assert_testresults_roundtrip_equal(result, direct)
 
     def test_all_features_failing_cv_filter_returns_empty_results(self):
         data = np.array(
@@ -388,6 +484,34 @@ class TestTestResultsSaveLoad:
         assert loaded.cond_2 == original.cond_2
         assert loaded.config.cv_thr == original.config.cv_thr
 
+    def test_save_load_csv_roundtrip(self, tmp_path):
+        df = _make_proteomics_data(50, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.csv"
+
+        original.save(str(path))
+        loaded = _TestResults.load(str(path))
+
+        _assert_testresults_roundtrip_equal(original, loaded)
+
+    def test_save_load_tsv_roundtrip(self, tmp_path):
+        df = _make_proteomics_data(50, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.tsv"
+
+        original.save(str(path))
+        loaded = _TestResults.load(str(path))
+
+        _assert_testresults_roundtrip_equal(original, loaded)
+
     def test_load_missing_info_sidecar_raises_clear_error(self, tmp_path):
         df = _make_proteomics_data(20, 3)
         original = QuestVar(cv_thr=0.5).test(
@@ -523,6 +647,32 @@ class TestPowerResultsSaveLoad:
         loaded = PowerResults.load(str(path))
         assert len(loaded.design_grid) > 0
         assert loaded.config.get("cv_mean") is not None
+
+    def test_save_load_csv_roundtrip_preserves_design_grid_and_config_only(self, tmp_path):
+        original = _make_powerresults_with_extras()
+        path = tmp_path / "power.csv"
+
+        original.save(str(path))
+        loaded = PowerResults.load(str(path))
+
+        assert loaded.config == original.config
+        assert loaded.design_grid == original.design_grid
+        assert loaded.run_metrics == []
+        assert loaded.search_results == []
+        assert loaded.diagnostics == {}
+
+    def test_save_load_tsv_roundtrip_preserves_design_grid_and_config_only(self, tmp_path):
+        original = _make_powerresults_with_extras()
+        path = tmp_path / "power.tsv"
+
+        original.save(str(path))
+        loaded = PowerResults.load(str(path))
+
+        assert loaded.config == original.config
+        assert loaded.design_grid == original.design_grid
+        assert loaded.run_metrics == []
+        assert loaded.search_results == []
+        assert loaded.diagnostics == {}
 
     def test_save_load_meta_sidecar(self, tmp_path):
         import json

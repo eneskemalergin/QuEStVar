@@ -373,13 +373,24 @@ def plot_summary(
     vy = antler_y[~np.isnan(antler_y)]
     if len(vx) > 0:
         xabs = float(np.max(np.abs(vx)))
+        xabs = max(xabs, eq_thr, df_thr)
         xoff = xabs * 0.07 if xabs > 0 else 1.0
         ax_d.set_xlim(-(xabs + xoff), xabs + xoff)
+    else:
+        xabs = max(eq_thr, df_thr, 1.0)
+        xoff = xabs * 0.07
+        ax_d.set_xlim(-(xabs + xoff), xabs + xoff)
+
+    thr_y = max(abs(np.log10(max(p_thr, 1e-300))), 0.5)
     if len(vy) > 0:
         ymin_d = float(vy.min())
         ymax_d = float(vy.max())
         yoff = (ymax_d - ymin_d) * 0.07 if (ymax_d - ymin_d) > 0 else 1.0
-        ax_d.set_ylim(ymin_d - yoff, ymax_d + yoff)
+        ymin_d = min(ymin_d - yoff, -thr_y * 1.1)
+        ymax_d = max(ymax_d + yoff, thr_y * 1.1)
+        ax_d.set_ylim(ymin_d, ymax_d)
+    else:
+        ax_d.set_ylim(-thr_y * 1.1, thr_y * 1.1)
 
     ax_d.axhline(y=0,          color="lightgray", linestyle="-",  linewidth=1,     alpha=0.6, zorder=1)
     ax_d.axvline(x=0,          color="lightgray", linestyle="-",  linewidth=1,     alpha=0.6, zorder=1)
@@ -428,7 +439,12 @@ def plot_summary(
         ax_e.set_xlim(xmin_e - xoff_e, xmax_e + xoff_e)
     if len(vf) > 0:
         yabs = float(np.max(np.abs(vf)))
+        yabs = max(yabs, eq_thr, df_thr)
         yoff_e = yabs * 0.07 if yabs > 0 else 1.0
+        ax_e.set_ylim(-(yabs + yoff_e), yabs + yoff_e)
+    else:
+        yabs = max(eq_thr, df_thr, 1.0)
+        yoff_e = yabs * 0.07
         ax_e.set_ylim(-(yabs + yoff_e), yabs + yoff_e)
 
     ax_e.axhline(y=0,      color="lightgray", linestyle="-",  linewidth=1,     alpha=0.6, zorder=1)
