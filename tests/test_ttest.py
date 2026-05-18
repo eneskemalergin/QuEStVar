@@ -2,11 +2,31 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.extra.numpy import arrays
 from numpy.testing import assert_allclose
 from scipy.stats import ttest_ind as sp_ttest_ind
 from scipy.stats import ttest_rel as sp_ttest_rel
 
-from questvar._ttest import run_paired, run_unpaired, ttest_ind, ttest_rel
+from questvar._ttest import COL_LOG2FC, COL_STATUS, run_paired, run_unpaired, ttest_ind, ttest_rel
+
+
+@st.composite
+def matched_float_matrices(draw):
+    n_rows = draw(st.integers(min_value=1, max_value=8))
+    n_cols = draw(st.integers(min_value=2, max_value=6))
+    elements = st.floats(
+        min_value=-20.0,
+        max_value=20.0,
+        allow_nan=False,
+        allow_infinity=False,
+        width=32,
+    )
+    shape = (n_rows, n_cols)
+    s1 = draw(arrays(np.float64, shape=shape, elements=elements))
+    s2 = draw(arrays(np.float64, shape=shape, elements=elements))
+    return s1, s2
 
 
 class TestTtestInd:
@@ -104,6 +124,36 @@ class TestRunUnpaired:
         result = run_unpaired(s1, s2)
         assert np.all(np.isin(result[:, 16], [-1, 0, 1]))
 
+    def test_single_feature_input(self):
+        s1 = np.array([[10.0, 10.0, 10.0]], dtype=np.float64)
+        s2 = np.array([[10.2, 10.2, 10.2]], dtype=np.float64)
+        result = run_unpaired(s1, s2, correction=None)
+        assert result.shape == (1, 17)
+        assert result[0, COL_STATUS] in (-1, 0, 1)
+
+    def test_exact_equivalence_boundary_is_not_equivalent(self):
+        s1 = np.full((1, 4), 10.0, dtype=np.float64)
+        s2 = np.full((1, 4), 9.5, dtype=np.float64)
+        result = run_unpaired(s1, s2, eq_thr=0.5, df_thr=1.0, p_thr=0.05, correction=None)
+        assert_allclose(result[0, COL_LOG2FC], 0.5, atol=1e-12)
+        assert result[0, COL_STATUS] == 0
+
+    def test_exact_difference_boundary_is_not_differential(self):
+        s1 = np.full((1, 4), 10.0, dtype=np.float64)
+        s2 = np.full((1, 4), 9.0, dtype=np.float64)
+        result = run_unpaired(s1, s2, eq_thr=0.5, df_thr=1.0, p_thr=0.05, correction=None)
+        assert_allclose(result[0, COL_LOG2FC], 1.0, atol=1e-12)
+        assert result[0, COL_STATUS] == 0
+
+    def test_one_non_nan_replicate_row_does_not_crash(self):
+        s1 = np.array([[10.0, np.nan, np.nan], [10.0, 10.1, 9.9]], dtype=np.float64)
+        s2 = np.array([[10.0, np.nan, np.nan], [9.7, 9.8, 9.9]], dtype=np.float64)
+        with pytest.warns(RuntimeWarning, match="Degrees of freedom <= 0 for slice"):
+            result = run_unpaired(s1, s2, correction=None)
+        assert result.shape == (2, 17)
+        assert result[0, COL_STATUS] == 0
+        assert result[1, COL_STATUS] in (-1, 0, 1)
+
 
 class TestRunPaired:
     def test_basic_pipeline(self):
@@ -120,3 +170,95 @@ class TestRunPaired:
         s2 = s1 + rng.normal(0, 0.5, (50, 5))
         result = run_paired(s1, s2)
         assert np.all(np.isin(result[:, 16], [-1, 0, 1]))
+
+    def test_single_feature_input(self):
+        s1 = np.array([[12.0, 12.0, 12.0]], dtype=np.float64)
+        s2 = np.array([[11.9, 11.9, 11.9]], dtype=np.float64)
+        result = run_paired(s1, s2, correction=None)
+        assert result.shape == (1, 17)
+        assert result[0, COL_STATUS] in (-1, 0, 1)
+
+    def test_exact_boundaries_are_strict_for_paired_status(self):
+        s1 = np.full((2, 4), 10.0, dtype=np.float64)
+        s2 = np.array(
+            [
+                [9.5, 9.5, 9.5, 9.5],
+                [9.0, 9.0, 9.0, 9.0],
+            ],
+            dtype=np.float64,
+        )
+        result = run_paired(s1, s2, eq_thr=0.5, df_thr=1.0, p_thr=0.05, correction=None)
+        assert_allclose(result[:, COL_LOG2FC], [0.5, 1.0], atol=1e-12)
+        assert np.all(result[:, COL_STATUS] == 0)
+
+
+class TestPropertyRunUnpaired:
+    @settings(deadline=None, max_examples=40)
+    @given(matched_float_matrices())
+    def test_output_ranges_and_shape(self, matrices):
+        s1, s2 = matrices
+        result = run_unpaired(s1, s2, correction="fdr")
+        assert result.shape == (s1.shape[0], 17)
+        assert np.all(result[:, 0] == s1.shape[1])
+        assert np.all(result[:, 1] == s2.shape[1])
+
+        p_block = result[:, 4:14]
+        finite_mask = np.isfinite(p_block)
+        assert np.all((p_block[finite_mask] >= 0.0) & (p_block[finite_mask] <= 1.0))
+        assert np.all(np.isin(result[:, COL_STATUS], [-1.0, 0.0, 1.0]))
+
+    @settings(deadline=None, max_examples=40)
+    @given(matched_float_matrices())
+    def test_swapping_inputs_preserves_pvalues_and_flips_log2fc(self, matrices):
+        s1, s2 = matrices
+        forward = run_unpaired(s1, s2, correction="holm")
+        reverse = run_unpaired(s2, s1, correction="holm")
+
+        assert_allclose(forward[:, COL_LOG2FC], -reverse[:, COL_LOG2FC], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 4], reverse[:, 4], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 5], reverse[:, 5], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 6], reverse[:, 8], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 7], reverse[:, 9], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 8], reverse[:, 6], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 9], reverse[:, 7], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 10], reverse[:, 10], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 11], reverse[:, 11], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 12], reverse[:, 12], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 13], reverse[:, 13], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, COL_STATUS], reverse[:, COL_STATUS], atol=0.0, rtol=0.0)
+
+
+class TestPropertyRunPaired:
+    @settings(deadline=None, max_examples=40)
+    @given(matched_float_matrices())
+    def test_output_ranges_and_shape(self, matrices):
+        s1, s2 = matrices
+        result = run_paired(s1, s2, correction="fdr")
+        assert result.shape == (s1.shape[0], 17)
+        assert np.all(result[:, 0] == s1.shape[1])
+        assert np.all(result[:, 1] == s1.shape[1])
+
+        p_block = result[:, 4:14]
+        finite_mask = np.isfinite(p_block)
+        assert np.all((p_block[finite_mask] >= 0.0) & (p_block[finite_mask] <= 1.0))
+        assert np.all(np.isin(result[:, COL_STATUS], [-1.0, 0.0, 1.0]))
+
+    @settings(deadline=None, max_examples=40)
+    @given(matched_float_matrices())
+    def test_swapping_inputs_preserves_pvalues_and_flips_log2fc(self, matrices):
+        s1, s2 = matrices
+        forward = run_paired(s1, s2, correction="holm")
+        reverse = run_paired(s2, s1, correction="holm")
+
+        assert_allclose(forward[:, COL_LOG2FC], -reverse[:, COL_LOG2FC], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 4], reverse[:, 4], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 5], reverse[:, 5], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 6], reverse[:, 8], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 7], reverse[:, 9], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 8], reverse[:, 6], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 9], reverse[:, 7], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 10], reverse[:, 10], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 11], reverse[:, 11], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 12], reverse[:, 12], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, 13], reverse[:, 13], atol=1e-10, rtol=1e-10)
+        assert_allclose(forward[:, COL_STATUS], reverse[:, COL_STATUS], atol=0.0, rtol=0.0)

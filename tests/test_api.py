@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import numpy as np
 import polars as pl
+from numpy.testing import assert_allclose
+import pytest
 
 from questvar._api import QuestVar
+from questvar._api import PowerResults
 from questvar._api import TestResults as _TestResults
 from questvar._config import TestConfig
 from questvar.test import test as qv_test
@@ -48,6 +52,18 @@ class TestQuestVar:
         assert isinstance(result, _TestResults)
         assert isinstance(result.data, pl.DataFrame)
         assert "status" in result.data.columns
+
+    def test_feature_id_preferred_over_protein_id(self):
+        df = _make_proteomics_data(12, 3).with_columns(
+            pl.Series("feature_id", [f"feat_{i:03d}" for i in range(12)])
+        )
+        qv = QuestVar(cv_thr=10.0)
+        result = qv.test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        assert result.data["feature_id"].to_list() == [f"feat_{i:03d}" for i in range(12)]
 
     def test_test_with_numpy(self):
         rng = np.random.default_rng(42)
@@ -118,6 +134,69 @@ class TestQuestVar:
 
         with pytest.raises(ValueError, match="Unknown format"):
             result.save(str(tmp_path / "test.txt"))
+
+    def test_compare_all_pairs_returns_all_pairwise_results(self):
+        df = _make_proteomics_data(30, 3)
+        qv = QuestVar(cv_thr=0.5)
+        results = qv.compare_all_pairs(
+            df,
+            {
+                "group_a": ["sample_00", "sample_01"],
+                "group_b": ["sample_02", "sample_03"],
+                "group_c": ["sample_04", "sample_05"],
+            },
+        )
+        assert set(results) == {
+            ("group_a", "group_b"),
+            ("group_a", "group_c"),
+            ("group_b", "group_c"),
+        }
+        assert all(isinstance(value, _TestResults) for value in results.values())
+
+    def test_all_features_failing_cv_filter_raises(self):
+        data = np.array(
+            [
+                [1.0, 100.0, 1.0, 100.0],
+                [2.0, 200.0, 2.0, 200.0],
+                [3.0, 300.0, 3.0, 300.0],
+            ],
+            dtype=np.float64,
+        )
+        qv = QuestVar(cv_thr=0.1)
+        import pytest
+
+        with pytest.raises(ValueError, match="No features passed CV filter"):
+            qv.test(data, cond_1=[0, 1], cond_2=[2, 3])
+
+    def test_is_log2_false_matches_manual_log2_pipeline(self):
+        rng = np.random.default_rng(42)
+        raw = rng.lognormal(mean=2.0, sigma=0.3, size=(40, 6))
+
+        raw_result = QuestVar(cv_thr=1.0, is_log2=False, correction=None).test(
+            raw,
+            cond_1=[0, 1, 2],
+            cond_2=[3, 4, 5],
+        )
+        log_result = QuestVar(cv_thr=1.0, is_log2=True, correction=None).test(
+            np.log2(np.maximum(raw, 1e-300)),
+            cond_1=[0, 1, 2],
+            cond_2=[3, 4, 5],
+        )
+
+        assert raw_result.data["feature_id"].to_list() == log_result.data["feature_id"].to_list()
+        for col in [
+            "log2fc",
+            "df_p",
+            "df_adjp",
+            "eq_p",
+            "eq_adjp",
+            "comb_p",
+            "comb_adjp",
+            "log10_pval",
+            "log10_adj_pval",
+        ]:
+            assert_allclose(raw_result.data[col].to_numpy(), log_result.data[col].to_numpy())
+        assert raw_result.data["status"].to_list() == log_result.data["status"].to_list()
 
 
 class TestTestConvenience:
@@ -199,6 +278,122 @@ class TestTestResultsSaveLoad:
         assert loaded.cond_2 == original.cond_2
         assert loaded.config.cv_thr == original.config.cv_thr
 
+    def test_load_missing_info_sidecar_raises_clear_error(self, tmp_path):
+        df = _make_proteomics_data(20, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        (tmp_path / "results.info.parquet").unlink()
+
+        with pytest.raises(FileNotFoundError, match="Missing sidecar file"):
+            _TestResults.load(str(path))
+
+    def test_load_missing_meta_raises_clear_error(self, tmp_path):
+        df = _make_proteomics_data(20, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        (tmp_path / "results.meta.json").unlink()
+
+        with pytest.raises(FileNotFoundError, match="Missing metadata file"):
+            _TestResults.load(str(path))
+
+    def test_load_rejects_invalid_meta_json(self, tmp_path):
+        df = _make_proteomics_data(20, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        (tmp_path / "results.meta.json").write_text("{bad json")
+
+        with pytest.raises(ValueError, match="Invalid metadata JSON"):
+            _TestResults.load(str(path))
+
+    def test_load_rejects_missing_required_meta_keys(self, tmp_path):
+        df = _make_proteomics_data(20, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        with open(tmp_path / "results.meta.json", "w") as f:
+            json.dump({"cond_1": ["sample_00"], "cond_2": ["sample_03"]}, f)
+
+        with pytest.raises(ValueError, match="missing required keys: config"):
+            _TestResults.load(str(path))
+
+    def test_load_rejects_non_mapping_config(self, tmp_path):
+        df = _make_proteomics_data(20, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        with open(tmp_path / "results.meta.json", "w") as f:
+            json.dump({"config": "bad", "cond_1": ["sample_00"], "cond_2": ["sample_03"]}, f)
+
+        with pytest.raises(ValueError, match="Metadata config must be a mapping"):
+            _TestResults.load(str(path))
+
+    def test_load_rejects_non_list_conditions(self, tmp_path):
+        df = _make_proteomics_data(20, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        with open(tmp_path / "results.meta.json", "w") as f:
+            json.dump({"config": original.config.to_dict(), "cond_1": "bad", "cond_2": ["sample_03"]}, f)
+
+        with pytest.raises(ValueError, match="cond_1 and cond_2 must be lists"):
+            _TestResults.load(str(path))
+
+    def test_load_rejects_main_file_missing_required_columns(self, tmp_path):
+        df = _make_proteomics_data(20, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        pl.read_parquet(path).drop("status").write_parquet(path)
+
+        with pytest.raises(ValueError, match="TestResults data file is missing required columns: status"):
+            _TestResults.load(str(path))
+
+    def test_load_rejects_info_sidecar_missing_required_columns(self, tmp_path):
+        df = _make_proteomics_data(20, 3)
+        original = QuestVar(cv_thr=0.5).test(
+            df,
+            cond_1=["sample_00", "sample_01", "sample_02"],
+            cond_2=["sample_03", "sample_04", "sample_05"],
+        )
+        path = tmp_path / "results.parquet"
+        original.save(str(path))
+        info_path = tmp_path / "results.info.parquet"
+        pl.read_parquet(info_path).drop("s1_cv_status").write_parquet(info_path)
+
+        with pytest.raises(ValueError, match="TestResults sidecar file is missing required columns: s1_cv_status"):
+            _TestResults.load(str(path))
+
 
 class TestPowerResultsSaveLoad:
     def test_save_load_parquet_roundtrip(self, tmp_path):
@@ -239,3 +434,77 @@ class TestPowerResultsSaveLoad:
         with open(meta_path) as f:
             meta = json.load(f)
         assert "config" in meta
+
+    def test_load_without_meta_sidecar_uses_empty_config(self, tmp_path):
+        from questvar.power.run import run_power_analysis
+
+        results = run_power_analysis(
+            eq_boundaries=[0.5],
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=100,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        path = tmp_path / "power.parquet"
+        results.save(str(path))
+        (tmp_path / "power.meta.json").unlink()
+
+        loaded = PowerResults.load(str(path))
+        assert loaded.config == {}
+        assert len(loaded.design_grid) == len(results.design_grid)
+
+    def test_load_rejects_invalid_meta_json(self, tmp_path):
+        from questvar.power.run import run_power_analysis
+
+        results = run_power_analysis(
+            eq_boundaries=[0.5],
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=100,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        path = tmp_path / "power.parquet"
+        results.save(str(path))
+        (tmp_path / "power.meta.json").write_text("{bad json")
+
+        with pytest.raises(ValueError, match="Invalid metadata JSON"):
+            PowerResults.load(str(path))
+
+    def test_load_rejects_non_mapping_config(self, tmp_path):
+        from questvar.power.run import run_power_analysis
+
+        results = run_power_analysis(
+            eq_boundaries=[0.5],
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=100,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        path = tmp_path / "power.parquet"
+        results.save(str(path))
+        with open(tmp_path / "power.meta.json", "w") as f:
+            json.dump({"config": "bad"}, f)
+
+        with pytest.raises(ValueError, match="Metadata config must be a mapping"):
+            PowerResults.load(str(path))
+
+    def test_load_rejects_main_file_missing_required_columns(self, tmp_path):
+        from questvar.power.run import run_power_analysis
+
+        results = run_power_analysis(
+            eq_boundaries=[0.5],
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=100,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        path = tmp_path / "power.parquet"
+        results.save(str(path))
+        pl.read_parquet(path).drop("parameter").write_parquet(path)
+
+        with pytest.raises(ValueError, match="PowerResults data file is missing required columns: parameter"):
+            PowerResults.load(str(path))

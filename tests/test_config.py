@@ -1,10 +1,86 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import assume
+from hypothesis import strategies as st
 
 from questvar._config import VALID_CORRECTIONS, PowerConfig, TestConfig
+
+
+@st.composite
+def valid_testconfig_kwargs(draw):
+    eq_thr = draw(st.floats(min_value=0.01, max_value=2.0, allow_nan=False, allow_infinity=False))
+    df_thr = draw(st.floats(min_value=eq_thr + 1e-6, max_value=eq_thr + 3.0, allow_nan=False, allow_infinity=False))
+    correction = draw(st.sampled_from(sorted(VALID_CORRECTIONS, key=lambda value: str(value))))
+    return {
+        "cv_thr": draw(st.floats(min_value=1e-6, max_value=3.0, allow_nan=False, allow_infinity=False)),
+        "p_thr": draw(st.floats(min_value=1e-6, max_value=0.99, allow_nan=False, allow_infinity=False)),
+        "df_thr": df_thr,
+        "eq_thr": eq_thr,
+        "var_equal": draw(st.booleans()),
+        "is_paired": draw(st.booleans()),
+        "correction": correction,
+        "is_log2": draw(st.booleans()),
+        "allow_missing": draw(st.booleans()),
+    }
+
+
+@st.composite
+def valid_powerconfig_kwargs(draw):
+    eq_thr = draw(st.floats(min_value=0.01, max_value=2.0, allow_nan=False, allow_infinity=False))
+    df_thr = draw(st.floats(min_value=eq_thr + 1e-6, max_value=eq_thr + 3.0, allow_nan=False, allow_infinity=False))
+    correction = draw(st.sampled_from(sorted(VALID_CORRECTIONS, key=lambda value: str(value))))
+    eq_boundaries = draw(
+        st.lists(
+            st.floats(min_value=0.01, max_value=2.0, allow_nan=False, allow_infinity=False),
+            min_size=1,
+            max_size=5,
+        )
+    )
+    n_reps_grid = draw(st.lists(st.integers(min_value=2, max_value=12), min_size=1, max_size=5))
+    n_prts_grid = draw(st.lists(st.integers(min_value=1, max_value=500), min_size=0, max_size=4))
+    cv_mean_grid = draw(
+        st.lists(
+            st.floats(min_value=0.01, max_value=1.5, allow_nan=False, allow_infinity=False),
+            min_size=1,
+            max_size=5,
+        )
+    )
+    cv_thr_grid = draw(
+        st.lists(
+            st.floats(min_value=1e-6, max_value=3.0, allow_nan=False, allow_infinity=False),
+            min_size=1,
+            max_size=5,
+        )
+    )
+    return {
+        "n_prts": draw(st.integers(min_value=1, max_value=10000)),
+        "n_reps": draw(st.integers(min_value=2, max_value=12)),
+        "cv_mean": draw(st.floats(min_value=0.01, max_value=1.5, allow_nan=False, allow_infinity=False)),
+        "cv_k": draw(st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)),
+        "cv_theta": draw(st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)),
+        "eq_thr": eq_thr,
+        "p_thr": draw(st.floats(min_value=1e-6, max_value=0.99, allow_nan=False, allow_infinity=False)),
+        "df_thr": df_thr,
+        "cv_thr": draw(st.floats(min_value=1e-6, max_value=3.0, allow_nan=False, allow_infinity=False)),
+        "correction": correction,
+        "int_mu": draw(st.floats(min_value=0.1, max_value=30.0, allow_nan=False, allow_infinity=False)),
+        "int_sd": draw(st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)),
+        "n_iterations": draw(st.integers(min_value=1, max_value=25)),
+        "target_sei": draw(st.floats(min_value=1e-6, max_value=1.0, allow_nan=False, allow_infinity=False)),
+        "target_power": draw(st.floats(min_value=1e-6, max_value=1.0, allow_nan=False, allow_infinity=False)),
+        "eq_boundaries": eq_boundaries,
+        "n_reps_grid": n_reps_grid,
+        "n_prts_grid": n_prts_grid,
+        "cv_mean_grid": cv_mean_grid,
+        "cv_thr_grid": cv_thr_grid,
+        "random_seed": draw(st.one_of(st.none(), st.integers(min_value=0, max_value=10_000))),
+        "n_jobs": draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8))),
+    }
 
 
 class TestTestConfig:
@@ -81,6 +157,39 @@ class TestTestConfig:
         assert updated.cv_thr == 0.3
         assert updated.df_thr == 1.0  # unchanged
 
+    @settings(deadline=None, max_examples=40)
+    @given(valid_testconfig_kwargs())
+    def test_roundtrip_properties(self, kwargs):
+        cfg = TestConfig(**kwargs)
+        as_dict = cfg.to_dict()
+        assert TestConfig.from_dict(as_dict) == cfg
+
+    @settings(deadline=None, max_examples=30)
+    @given(valid_testconfig_kwargs())
+    def test_yaml_roundtrip_properties(self, kwargs):
+        cfg = TestConfig(**kwargs)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "roundtrip.yaml"
+            cfg.to_yaml(str(path))
+            loaded = TestConfig.from_yaml(str(path))
+            assert loaded == cfg
+
+    @settings(deadline=None, max_examples=30)
+    @given(st.floats(max_value=0.0, allow_nan=False, allow_infinity=False))
+    def test_invalid_cv_thr_property(self, cv_thr):
+        with pytest.raises(ValueError, match="cv_thr must be"):
+            TestConfig(cv_thr=cv_thr)
+
+    @settings(deadline=None, max_examples=30)
+    @given(
+        st.floats(min_value=0.01, max_value=3.0, allow_nan=False, allow_infinity=False),
+        st.floats(min_value=0.01, max_value=3.0, allow_nan=False, allow_infinity=False),
+    )
+    def test_invalid_threshold_order_property(self, df_thr, eq_thr):
+        assume(df_thr <= eq_thr)
+        with pytest.raises(ValueError, match="df_thr .*must be > eq_thr"):
+            TestConfig(df_thr=df_thr, eq_thr=eq_thr)
+
 
 class TestPowerConfig:
     def test_defaults(self):
@@ -127,3 +236,32 @@ class TestPowerConfig:
         cfg.to_yaml(str(path))
         loaded = PowerConfig.from_yaml(str(path))
         assert loaded == cfg
+
+    @settings(deadline=None, max_examples=30)
+    @given(valid_powerconfig_kwargs())
+    def test_roundtrip_properties(self, kwargs):
+        cfg = PowerConfig(**kwargs)
+        as_dict = cfg.to_dict()
+        assert PowerConfig.from_dict(as_dict) == cfg
+
+    @settings(deadline=None, max_examples=20)
+    @given(valid_powerconfig_kwargs())
+    def test_yaml_roundtrip_properties(self, kwargs):
+        cfg = PowerConfig(**kwargs)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "power_roundtrip.yaml"
+            cfg.to_yaml(str(path))
+            loaded = PowerConfig.from_yaml(str(path))
+            assert loaded == cfg
+
+    @settings(deadline=None, max_examples=25)
+    @given(st.floats(max_value=0.0, allow_nan=False, allow_infinity=False))
+    def test_invalid_cv_thr_property(self, cv_thr):
+        with pytest.raises(ValueError, match="cv_thr must be"):
+            PowerConfig(cv_thr=cv_thr)
+
+    @settings(deadline=None, max_examples=25)
+    @given(st.integers(max_value=0))
+    def test_invalid_n_prts_property(self, n_prts):
+        with pytest.raises(ValueError, match="n_prts must be"):
+            PowerConfig(n_prts=n_prts)

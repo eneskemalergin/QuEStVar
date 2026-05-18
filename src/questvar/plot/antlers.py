@@ -165,14 +165,16 @@ def antlers(
         spine.set_edgecolor(pc.spine_color)
 
     # Legend outside the plot
-    legend = ax.legend(
-        fontsize=pc.legend_fontsize + 2,
-        frameon=True, fancybox=False, shadow=False, framealpha=0.9,
-        loc="upper left", bbox_to_anchor=(1.02, 1.02),
-        title="Status",
-        title_fontsize=pc.legend_fontsize + 3,
-    )
-    legend.get_title().set_fontweight("bold")
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        legend = ax.legend(
+            fontsize=pc.legend_fontsize + 2,
+            frameon=True, fancybox=False, shadow=False, framealpha=0.9,
+            loc="upper left", bbox_to_anchor=(1.02, 1.02),
+            title="Status",
+            title_fontsize=pc.legend_fontsize + 3,
+        )
+        legend.get_title().set_fontweight("bold")
 
     # Annotations
     if protein_ids is not None or top_n is not None:

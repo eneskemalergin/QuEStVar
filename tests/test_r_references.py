@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from questvar._correction import p_adjust
@@ -22,6 +23,9 @@ from questvar._ttest import (
 )
 
 from tests._r_reference import run_r_p_adjust_reference, run_r_ttest_tost_reference
+
+
+pytestmark = pytest.mark.r_reference
 
 
 def _unpaired_fixture() -> tuple[np.ndarray, np.ndarray]:

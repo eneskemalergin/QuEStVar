@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import numpy as np
 import polars as pl
 import pytest
+from numpy.testing import assert_allclose
 
+from questvar._api import QuestVar, TestResults
 from questvar._cli import main
 
 
@@ -22,8 +25,25 @@ def _make_test_data(tmp_path: Path, n_prts: int = 50, n_reps: int = 3) -> Path:
 
 def _make_yaml_config(tmp_path: Path) -> Path:
     path = tmp_path / "config.yaml"
-    path.write_text("cv_thr: 0.3\np_thr: 0.01\nequ_thr: 0.5\ndf_thr: 1.0\ncorrection: bonferroni\n")
+    path.write_text("cv_thr: 0.3\np_thr: 0.01\neq_thr: 0.5\ndf_thr: 1.0\ncorrection: bonferroni\n")
     return path
+
+
+def _assert_testresults_equal(left: TestResults, right: TestResults) -> None:
+    assert left.cond_1 == right.cond_1
+    assert left.cond_2 == right.cond_2
+    assert left.config == right.config
+    assert left.data.columns == right.data.columns
+    assert left.info.columns == right.info.columns
+    assert left.data.to_dicts() == right.data.to_dicts()
+    assert left.info["feature_id"].to_list() == right.info["feature_id"].to_list()
+    assert left.info["s1_cv_status"].to_list() == right.info["s1_cv_status"].to_list()
+    assert left.info["s2_cv_status"].to_list() == right.info["s2_cv_status"].to_list()
+    assert_allclose(
+        left.info["status"].to_numpy(),
+        right.info["status"].to_numpy(),
+        equal_nan=True,
+    )
 
 
 class TestCliTest:
@@ -71,6 +91,44 @@ class TestCliTest:
     def test_error_no_data(self):
         with pytest.raises(SystemExit):
             main(["test", "--cond-1", "a,b", "--cond-2", "c,d"])
+
+    def test_api_cli_yaml_parity_on_identical_input(self, tmp_path: Path):
+        input_path = _make_test_data(tmp_path)
+        config_path = _make_yaml_config(tmp_path)
+        data = pl.read_parquet(input_path)
+        cond_1 = ["sample_00", "sample_01", "sample_02"]
+        cond_2 = ["sample_03", "sample_04", "sample_05"]
+
+        api_results = QuestVar.from_yaml(str(config_path)).test(data, cond_1=cond_1, cond_2=cond_2)
+
+        cli_out = tmp_path / "cli.parquet"
+        main(
+            [
+                "test",
+                "--data",
+                str(input_path),
+                "--cond-1",
+                ",".join(cond_1),
+                "--cond-2",
+                ",".join(cond_2),
+                "--config",
+                str(config_path),
+                "--output",
+                str(cli_out),
+            ]
+        )
+        cli_results = TestResults.load(str(cli_out))
+
+        yaml_results = QuestVar.from_yaml(str(config_path)).test(data, cond_1=cond_1, cond_2=cond_2)
+
+        _assert_testresults_equal(api_results, cli_results)
+        _assert_testresults_equal(api_results, yaml_results)
+
+        with open(tmp_path / "cli.meta.json") as f:
+            cli_meta = json.load(f)
+        assert cli_meta["cond_1"] == cond_1
+        assert cli_meta["cond_2"] == cond_2
+        assert cli_meta["config"] == api_results.config.to_dict()
 
 
 class TestCliPower:

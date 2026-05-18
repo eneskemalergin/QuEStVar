@@ -100,6 +100,8 @@ def plot_power(
 
     pc = config or PlotConfig()
     ci_mult = ci if ci is not None else pc.ci_multiplier
+    if ci_mult < 0:
+        raise ValueError("ci must be >= 0")
 
     # ------------------------------------------------------------------
     # Extract lines: n_reps -> [(eq_thr, power, power_se), ...]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,86 @@ from questvar._ttest import (
     run_unpaired,
 )
 from questvar._validate import validate_and_extract
+
+
+def _load_metadata_json(
+    meta_path: Path,
+    *,
+    required_keys: tuple[str, ...] = (),
+    optional: bool = False,
+) -> dict[str, Any] | None:
+    import json
+
+    if not meta_path.exists():
+        if optional:
+            return None
+        raise FileNotFoundError(f"Missing metadata file: {meta_path}")
+
+    try:
+        with open(meta_path) as f:
+            meta = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid metadata JSON in {meta_path}") from exc
+
+    if not isinstance(meta, dict):
+        raise ValueError(f"Metadata file must contain a JSON object: {meta_path}")
+
+    missing_keys = [key for key in required_keys if key not in meta]
+    if missing_keys:
+        raise ValueError(
+            f"Metadata file {meta_path} missing required keys: {', '.join(missing_keys)}"
+        )
+
+    return meta
+
+
+def _validate_frame_columns(
+    df: pl.DataFrame,
+    *,
+    required_columns: tuple[str, ...],
+    label: str,
+) -> None:
+    missing_columns = [column for column in required_columns if column not in df.columns]
+    if missing_columns:
+        raise ValueError(
+            f"{label} is missing required columns: {', '.join(missing_columns)}"
+        )
+
+
+_TEST_RESULTS_DATA_COLUMNS = (
+    "feature_id",
+    "n1",
+    "n2",
+    "log2fc",
+    "average",
+    "df_p",
+    "df_adjp",
+    "eq_p",
+    "eq_adjp",
+    "comb_p",
+    "comb_adjp",
+    "log10_pval",
+    "log10_adj_pval",
+    "status",
+)
+
+_TEST_RESULTS_INFO_COLUMNS = (
+    "feature_id",
+    "s1_cv_status",
+    "s2_cv_status",
+    "status",
+)
+
+_POWER_RESULTS_DESIGN_GRID_COLUMNS = (
+    "parameter",
+    "value",
+    "n_reps",
+    "eq_thr",
+    "cv_mean",
+    "cv_thr",
+    "power",
+    "sei_mean",
+)
 
 
 class QuestVar:
@@ -221,14 +302,14 @@ class TestResults:
 
     @classmethod
     def load(cls, path: str) -> TestResults:
-        import json
-
         from questvar._config import TestConfig
 
         p = Path(path)
         suffix = p.suffix
         stem = p.with_suffix("")
         info_path = f"{stem}.info{suffix}"
+        if not Path(info_path).exists():
+            raise FileNotFoundError(f"Missing sidecar file: {info_path}")
         if suffix == ".parquet":
             data = pl.read_parquet(path)
             info = pl.read_parquet(info_path)
@@ -240,9 +321,27 @@ class TestResults:
             info = pl.read_csv(info_path, separator="\t")
         else:
             raise ValueError(f"Unknown format: {suffix}")
-        with open(f"{stem}.meta.json") as f:
-            meta = json.load(f)
-        config = TestConfig.from_dict(meta["config"])
+        _validate_frame_columns(
+            data,
+            required_columns=_TEST_RESULTS_DATA_COLUMNS,
+            label="TestResults data file",
+        )
+        _validate_frame_columns(
+            info,
+            required_columns=_TEST_RESULTS_INFO_COLUMNS,
+            label="TestResults sidecar file",
+        )
+        meta = _load_metadata_json(
+            Path(f"{stem}.meta.json"),
+            required_keys=("config", "cond_1", "cond_2"),
+        )
+        assert meta is not None
+        config_payload = meta["config"]
+        if not isinstance(config_payload, dict):
+            raise ValueError("Metadata config must be a mapping")
+        if not isinstance(meta["cond_1"], list) or not isinstance(meta["cond_2"], list):
+            raise ValueError("Metadata cond_1 and cond_2 must be lists")
+        config = TestConfig.from_dict(config_payload)
         return cls(data, config, meta["cond_1"], meta["cond_2"], info)
 
     def summary(self) -> str:
@@ -330,8 +429,6 @@ class PowerResults:
 
     @classmethod
     def load(cls, path: str) -> PowerResults:
-        import json
-
         p = Path(path)
         suffix = p.suffix
         stem = p.with_suffix("")
@@ -343,13 +440,19 @@ class PowerResults:
             df = pl.read_csv(path, separator="\t")
         else:
             raise ValueError(f"Unknown format: {suffix}")
+        if len(df.columns) > 0:
+            _validate_frame_columns(
+                df,
+                required_columns=_POWER_RESULTS_DESIGN_GRID_COLUMNS,
+                label="PowerResults data file",
+            )
         design_grid = df.to_dicts()
         config = {}
-        meta_path = f"{stem}.meta.json"
-        if Path(meta_path).exists():
-            with open(meta_path) as f:
-                meta = json.load(f)
+        meta = _load_metadata_json(Path(f"{stem}.meta.json"), optional=True)
+        if meta is not None:
             config = meta.get("config", {})
+            if not isinstance(config, dict):
+                raise ValueError("Metadata config must be a mapping")
         return cls({
             "config": config,
             "design_grid": design_grid,
@@ -373,7 +476,9 @@ class PowerResults:
         payload = self.to_dict()[level]
         if isinstance(payload, dict):
             return pl.DataFrame([payload])
-        return pl.DataFrame(payload)
+        if isinstance(payload, list):
+            return pl.DataFrame(payload)
+        raise ValueError("PowerResults level must be a dict or list-like tabular payload")
 
     def optimal_design(self, search_for: str = "n_reps") -> dict[str, Any] | None:
         for row in self.search_results:
@@ -407,7 +512,7 @@ class PowerResults:
             Pivot table with row_axis values as index and col_axis values as columns.
         """
         joint_param = f"{row_axis}_{col_axis}"
-        rows = [r for r in self.design_grid if r["parameter"] == joint_param]
+        rows = [r for r in self.design_grid if r.get("parameter") == joint_param]
         if not rows:
             rows = self.design_grid
         if not rows:
@@ -422,7 +527,7 @@ class PowerResults:
             return df.pivot(index=row_axis, on=col_axis, values=metric, aggregate_function="mean")
         except Exception:
             return pl.DataFrame(
-                [{row_axis: r[row_axis], col_axis: r[col_axis], metric: r.get(metric)} for r in rows]
+                [{row_axis: r.get(row_axis), col_axis: r.get(col_axis), metric: r.get(metric)} for r in rows]
             )
 
     def compare(self, other: PowerResults | dict[str, Any], level: str = "design_grid") -> list[dict[str, Any]]:
@@ -437,6 +542,10 @@ class PowerResults:
         right_rows = other_payload.get(level, [])
         if not isinstance(left_rows, list) or not isinstance(right_rows, list):
             raise ValueError("compare() requires a tabular list-like level")
+        if not all(isinstance(row, Mapping) for row in left_rows):
+            raise ValueError("compare() requires mapping-like rows in the selected level")
+        if not all(isinstance(row, Mapping) for row in right_rows):
+            raise ValueError("compare() requires mapping-like rows in the selected level")
 
         keys = [
             "parameter",

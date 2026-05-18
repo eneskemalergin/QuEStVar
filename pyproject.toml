@@ -61,6 +61,10 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["-m", "not r_reference"]
+markers = [
+    "r_reference: R-backed reference tests that require R packages and are excluded from the default test suite",
+]
 
 [tool.mypy]
 python_version = "3.12"

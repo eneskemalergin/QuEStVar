@@ -3,6 +3,9 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.extra.numpy import arrays
 
 from questvar._validate import validate_and_extract
 
@@ -12,6 +15,62 @@ def _make_proteomics_df(n_prts=100, n_reps=3):
     data = {f"s{i}": rng.lognormal(18, 0.5, n_prts) for i in range(n_reps * 2)}
     data["protein_id"] = [f"p{i}" for i in range(n_prts)]
     return pl.DataFrame(data)
+
+
+@st.composite
+def valid_numpy_case(draw):
+    n_rows = draw(st.integers(min_value=1, max_value=12))
+    n_cols = draw(st.integers(min_value=4, max_value=10))
+    split = draw(st.integers(min_value=2, max_value=n_cols - 2))
+    elements = st.floats(
+        min_value=-100.0,
+        max_value=100.0,
+        allow_nan=False,
+        allow_infinity=False,
+        width=32,
+    )
+    data = draw(arrays(np.float64, shape=(n_rows, n_cols), elements=elements))
+    cond_1 = list(range(split))
+    cond_2 = list(range(split, n_cols))
+    cv_thr = draw(st.floats(min_value=1e-6, max_value=10.0, allow_nan=False, allow_infinity=False))
+    return data, cond_1, cond_2, cv_thr
+
+
+@st.composite
+def valid_polars_case(draw):
+    n_rows = draw(st.integers(min_value=1, max_value=12))
+    n_cols = draw(st.integers(min_value=4, max_value=10))
+    split = draw(st.integers(min_value=2, max_value=n_cols - 2))
+    elements = st.floats(
+        min_value=-100.0,
+        max_value=100.0,
+        allow_nan=False,
+        allow_infinity=False,
+        width=32,
+    )
+    matrix = draw(arrays(np.float64, shape=(n_rows, n_cols), elements=elements))
+    sample_cols = [f"s{i}" for i in range(n_cols)]
+    data = {name: matrix[:, idx] for idx, name in enumerate(sample_cols)}
+
+    id_mode = draw(st.sampled_from(["feature_id", "protein_id", "extra", "none"]))
+    expected_ids = None
+    if id_mode == "feature_id":
+        expected_ids = np.array([f"feat_{i:03d}" for i in range(n_rows)], dtype=object)
+        data["feature_id"] = expected_ids.tolist()
+        data["protein_id"] = [f"prot_{i:03d}" for i in range(n_rows)]
+    elif id_mode == "protein_id":
+        expected_ids = np.array([f"prot_{i:03d}" for i in range(n_rows)], dtype=object)
+        data["protein_id"] = expected_ids.tolist()
+    elif id_mode == "extra":
+        expected_ids = np.array([f"row_{i:03d}" for i in range(n_rows)], dtype=object)
+        data["sample_meta"] = expected_ids.tolist()
+    else:
+        expected_ids = np.arange(n_rows, dtype=np.int64)
+
+    cond_1 = sample_cols[:split]
+    cond_2 = sample_cols[split:]
+    cv_thr = draw(st.floats(min_value=1e-6, max_value=10.0, allow_nan=False, allow_infinity=False))
+    return pl.DataFrame(data), matrix, cond_1, cond_2, cv_thr, expected_ids
 
 
 class TestValidatePolars:
@@ -109,3 +168,42 @@ class TestValidateNumpy:
         arr = rng.lognormal(18, 0.5, (10, 4))
         s1, s2, pids, c1, c2, meta = validate_and_extract(arr, [0, 1], [2, 3], cv_thr=0.15)
         assert list(pids) == list(range(10))
+
+
+class TestValidateProperties:
+    @settings(deadline=None, max_examples=40)
+    @given(valid_numpy_case())
+    def test_numpy_valid_inputs_roundtrip_selected_columns(self, case):
+        arr, cond_1, cond_2, cv_thr = case
+        s1, s2, pids, c1, c2, meta = validate_and_extract(arr, cond_1, cond_2, cv_thr=cv_thr)
+        assert s1.shape == (arr.shape[0], len(cond_1))
+        assert s2.shape == (arr.shape[0], len(cond_2))
+        assert np.array_equal(s1, arr[:, cond_1])
+        assert np.array_equal(s2, arr[:, cond_2])
+        assert np.array_equal(pids, np.arange(arr.shape[0], dtype=np.int64))
+        assert c1 == cond_1
+        assert c2 == cond_2
+        assert meta == {}
+
+    @settings(deadline=None, max_examples=30)
+    @given(valid_numpy_case(), st.integers(min_value=1, max_value=4))
+    def test_numpy_out_of_range_indices_raise(self, case, overshoot):
+        arr, cond_1, cond_2, cv_thr = case
+        bad_cond_2 = list(cond_2)
+        bad_cond_2[-1] = arr.shape[1] - 1 + overshoot
+        with pytest.raises(ValueError, match="out of range"):
+            validate_and_extract(arr, cond_1, bad_cond_2, cv_thr=cv_thr)
+
+    @settings(deadline=None, max_examples=40)
+    @given(valid_polars_case())
+    def test_polars_valid_inputs_roundtrip_selected_columns_and_ids(self, case):
+        df, matrix, cond_1, cond_2, cv_thr, expected_ids = case
+        s1, s2, pids, c1, c2, meta = validate_and_extract(df, cond_1, cond_2, cv_thr=cv_thr)
+        assert s1.shape == (matrix.shape[0], len(cond_1))
+        assert s2.shape == (matrix.shape[0], len(cond_2))
+        assert np.array_equal(s1, matrix[:, : len(cond_1)])
+        assert np.array_equal(s2, matrix[:, len(cond_1) :])
+        assert np.array_equal(np.asarray(pids), np.asarray(expected_ids))
+        assert c1 == cond_1
+        assert c2 == cond_2
+        assert meta == {}

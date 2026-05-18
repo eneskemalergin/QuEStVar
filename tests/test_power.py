@@ -2,10 +2,23 @@ from __future__ import annotations
 
 import numpy as np
 from numpy.testing import assert_allclose
+import pytest
 
 from questvar._api import PowerResults
 from questvar.power._simulate import simulate_data
 from questvar.power.run import run_power_analysis
+
+
+def _make_power_results(design_grid: list[dict]) -> PowerResults:
+    return PowerResults(
+        {
+            "config": {},
+            "design_grid": design_grid,
+            "run_metrics": [],
+            "search_results": [],
+            "diagnostics": {},
+        }
+    )
 
 
 class TestSimulateData:
@@ -180,6 +193,139 @@ class TestPowerAnalysis:
         comparison = alt.compare(base)
         assert isinstance(comparison, list)
 
+    def test_to_frame_accepts_dict_level(self):
+        frame = PowerResults(
+            {
+                "config": {},
+                "design_grid": [],
+                "run_metrics": [],
+                "search_results": [],
+                "diagnostics": {"n_converged": 3},
+            }
+        ).to_frame("diagnostics")
+
+        assert frame.to_dicts() == [{"n_converged": 3}]
+
+    def test_to_frame_rejects_scalar_level_payload(self):
+        results = PowerResults(
+            {
+                "config": {},
+                "design_grid": 123,
+                "run_metrics": [],
+                "search_results": [],
+                "diagnostics": {},
+            }
+        )
+
+        with pytest.raises(ValueError, match="dict or list-like tabular payload"):
+            results.to_frame("design_grid")
+
+    def test_to_frame_rejects_string_level_payload(self):
+        results = PowerResults(
+            {
+                "config": {},
+                "design_grid": "oops",
+                "run_metrics": [],
+                "search_results": [],
+                "diagnostics": {},
+            }
+        )
+
+        with pytest.raises(ValueError, match="dict or list-like tabular payload"):
+            results.to_frame("design_grid")
+
+    def test_compare_rejects_non_mapping_rows_on_left(self):
+        left = PowerResults(
+            {
+                "config": {},
+                "design_grid": ["oops"],
+                "run_metrics": [],
+                "search_results": [],
+                "diagnostics": {},
+            }
+        )
+
+        with pytest.raises(ValueError, match="mapping-like rows"):
+            left.compare({"design_grid": []})
+
+    def test_compare_rejects_non_mapping_rows_on_right(self):
+        left = PowerResults(
+            {
+                "config": {},
+                "design_grid": [],
+                "run_metrics": [],
+                "search_results": [],
+                "diagnostics": {},
+            }
+        )
+
+        with pytest.raises(ValueError, match="mapping-like rows"):
+            left.compare({"design_grid": ["oops"]})
+
+    def test_compare_uses_requested_level_and_returns_matching_rows_only(self):
+        left = PowerResults(
+            {
+                "config": {},
+                "design_grid": [],
+                "run_metrics": [
+                    {
+                        "parameter": "eq_thr",
+                        "value": 0.5,
+                        "n_reps": 5,
+                        "eq_thr": 0.5,
+                        "cv_mean": 0.2,
+                        "cv_thr": 0.5,
+                        "power": 0.8,
+                        "sei_mean": 0.9,
+                        "false_diff_rate": 0.02,
+                    },
+                    {
+                        "parameter": "eq_thr",
+                        "value": 0.7,
+                        "n_reps": 5,
+                        "eq_thr": 0.7,
+                        "cv_mean": 0.2,
+                        "cv_thr": 0.5,
+                        "power": 0.9,
+                        "sei_mean": 0.95,
+                        "false_diff_rate": 0.01,
+                    },
+                ],
+                "search_results": [],
+                "diagnostics": {},
+            }
+        )
+        right = {
+            "run_metrics": [
+                {
+                    "parameter": "eq_thr",
+                    "value": 0.5,
+                    "n_reps": 5,
+                    "eq_thr": 0.5,
+                    "cv_mean": 0.2,
+                    "cv_thr": 0.5,
+                    "power": 0.75,
+                    "sei_mean": 0.85,
+                    "false_diff_rate": 0.03,
+                }
+            ]
+        }
+
+        comparison = left.compare(right, level="run_metrics")
+        assert comparison == [
+            {
+                "parameter": "eq_thr",
+                "value": 0.5,
+                "n_reps": 5,
+                "eq_thr": 0.5,
+                "cv_mean": 0.2,
+                "cv_thr": 0.5,
+                "delta_sei_mean": 0.050000000000000044,
+                "delta_power": 0.050000000000000044,
+                "delta_false_diff_rate": -0.009999999999999998,
+            }
+        ]
+
 
 class TestPowerWorkflowImprovements:
     """Tests for power workflow improvements: richer sweeps, diagnostics, exploration."""
@@ -338,6 +484,91 @@ class TestPowerWorkflowImprovements:
         tbl = results.design_table(row_axis="eq_thr", col_axis="n_reps")
         assert isinstance(tbl, pl.DataFrame)
         assert len(tbl) > 0
+
+    def test_design_table_fallback_uses_non_joint_rows_when_joint_missing(self):
+        tbl = _make_power_results(
+            [
+                {
+                    "parameter": "eq_thr",
+                    "eq_thr": 0.3,
+                    "n_reps": 5,
+                    "power": 0.72,
+                },
+                {
+                    "parameter": "eq_thr",
+                    "eq_thr": 0.5,
+                    "n_reps": 5,
+                    "power": 0.88,
+                },
+            ]
+        ).design_table(row_axis="eq_thr", col_axis="n_reps")
+
+        assert tbl.columns == ["eq_thr", "5"]
+        assert tbl["eq_thr"].to_list() == [0.3, 0.5]
+        assert tbl["5"].to_list() == [0.72, 0.88]
+
+    def test_design_table_fallback_handles_non_numeric_metric(self):
+        import polars as pl
+
+        tbl = _make_power_results(
+            [
+                {
+                    "parameter": "eq_thr_n_reps",
+                    "eq_thr": 0.3,
+                    "n_reps": 5,
+                    "power": "bad",
+                },
+            ]
+        ).design_table(row_axis="eq_thr", col_axis="n_reps")
+
+        assert isinstance(tbl, pl.DataFrame)
+        assert tbl.columns == ["eq_thr", "n_reps", "power"]
+        assert tbl.to_dicts() == [{"eq_thr": 0.3, "n_reps": 5, "power": "bad"}]
+
+    def test_design_table_fallback_handles_missing_axes_in_malformed_rows(self):
+        import polars as pl
+
+        tbl = _make_power_results(
+            [
+                {
+                    "parameter": "eq_thr_n_reps",
+                    "n_reps": 5,
+                    "power": 0.8,
+                },
+                {
+                    "parameter": "eq_thr_n_reps",
+                    "eq_thr": 0.5,
+                    "power": 0.9,
+                },
+            ]
+        ).design_table(row_axis="eq_thr", col_axis="n_reps")
+
+        assert isinstance(tbl, pl.DataFrame)
+        assert tbl.columns == ["eq_thr", "n_reps", "power"]
+        assert tbl.to_dicts() == [
+            {"eq_thr": None, "n_reps": 5, "power": 0.8},
+            {"eq_thr": 0.5, "n_reps": None, "power": 0.9},
+        ]
+
+    def test_design_table_ignores_rows_missing_parameter_when_finding_joint_rows(self):
+        tbl = _make_power_results(
+            [
+                {
+                    "eq_thr": 0.1,
+                    "n_reps": 99,
+                    "power": 0.01,
+                },
+                {
+                    "parameter": "eq_thr_n_reps",
+                    "eq_thr": 0.3,
+                    "n_reps": 5,
+                    "power": 0.72,
+                },
+            ]
+        ).design_table(row_axis="eq_thr", col_axis="n_reps")
+
+        assert tbl.columns == ["eq_thr", "5"]
+        assert tbl.to_dicts() == [{"eq_thr": 0.3, "5": 0.72}]
 
     def test_design_grid_does_not_include_delta_rows(self):
         results = run_power_analysis(
