@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from questvar.plot._annotate import annotate_proteins
+from questvar.plot._annotate import annotate_features
 from questvar.plot._config import PlotConfig
 from questvar.plot._helpers import draw_thresholds, finalize_plot
 
@@ -23,6 +23,7 @@ def antlers(
     cond_2_label: str = "Condition 2",
     title_add: str = "",
     figsize: tuple[float, float] = (12, 9),
+    feature_ids: list[str] | None = None,
     protein_ids: list[str] | None = None,
     top_n: int | None = None,
     label_col: str = "feature_id",
@@ -30,7 +31,7 @@ def antlers(
     show: bool = False,
     save_path: str | Path | None = None,
 ) -> Figure:
-    """Standalone Antler's plot with optional protein annotations.
+    """Standalone Antler's plot with optional feature annotations.
 
     Parameters
     ----------
@@ -44,11 +45,13 @@ def antlers(
         Optional subtitle appended to the title.
     figsize : tuple
         Figure dimensions ``(width, height)`` in inches.
-    protein_ids : list of str, optional
+    feature_ids : list of str, optional
         Explicit feature IDs to annotate on the plot.
+    protein_ids : list of str, optional
+        Backward-compatible alias for ``feature_ids``.
     top_n : int, optional
         Annotate the top N most significant features per status category.
-        Ignored if ``protein_ids`` is given.
+        Ignored if ``feature_ids`` or ``protein_ids`` is given.
     label_col : str
         Column in ``results.data`` to use as annotation text.
     rasterize_scatters : bool
@@ -66,6 +69,11 @@ def antlers(
         The matplotlib figure. Attaches ``fig.ax_main`` for post-hoc access.
     """
     import matplotlib.pyplot as plt
+
+    if feature_ids is not None and protein_ids is not None:
+        raise ValueError("Parameters 'feature_ids' and 'protein_ids' are aliases. Pass only one.")
+
+    selected_feature_ids = feature_ids if feature_ids is not None else protein_ids
 
     pc = config or PlotConfig()
 
@@ -177,11 +185,11 @@ def antlers(
         legend.get_title().set_fontweight("bold")
 
     # Annotations
-    if protein_ids is not None or top_n is not None:
-        annotate_proteins(
+    if selected_feature_ids is not None or top_n is not None:
+        annotate_features(
             ax, log2fc, antler_y, status_int, label_arr.tolist(),
-            protein_ids=protein_ids,
-            top_n=top_n if top_n else (pc.annotate_top_n if protein_ids is None else None),
+            feature_ids=selected_feature_ids,
+            top_n=top_n if top_n else (pc.annotate_top_n if selected_feature_ids is None else None),
             pc=pc,
         )
 

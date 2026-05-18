@@ -5,14 +5,14 @@ from typing import Any
 import numpy as np
 
 
-def annotate_proteins(
+def annotate_features(
     ax: Any,
     log2fc: np.ndarray,
     log10_adjp: np.ndarray,
     status: np.ndarray,
     labels: list[str],
     *,
-    protein_ids: list[str] | None = None,
+    feature_ids: list[str] | None = None,
     top_n: int | None = None,
     pc: Any = None,
 ) -> list:
@@ -32,8 +32,8 @@ def annotate_proteins(
     n = len(log2fc)
     mask = np.ones(n, dtype=bool)
 
-    if protein_ids is not None and len(protein_ids) > 0:
-        id_set = set(protein_ids)
+    if feature_ids is not None and len(feature_ids) > 0:
+        id_set = set(feature_ids)
         mask = np.array([lab in id_set for lab in labels])
     elif top_n is not None and top_n > 0:
         sel: list[int] = []
@@ -152,3 +152,26 @@ def annotate_proteins(
             annotations.append(ann)
 
     return annotations
+
+
+def annotate_proteins(
+    ax: Any,
+    log2fc: np.ndarray,
+    log10_adjp: np.ndarray,
+    status: np.ndarray,
+    labels: list[str],
+    *,
+    protein_ids: list[str] | None = None,
+    top_n: int | None = None,
+    pc: Any = None,
+) -> list:
+    return annotate_features(
+        ax,
+        log2fc,
+        log10_adjp,
+        status,
+        labels,
+        feature_ids=protein_ids,
+        top_n=top_n,
+        pc=pc,
+    )

@@ -36,9 +36,9 @@ def validate_and_extract(
     Returns
     -------
     s1_arr, s2_arr : ndarray
-        Intensity arrays, shape (n_proteins, n_replicates).
-    protein_ids : ndarray
-        Protein identifiers (or range(n_proteins) for ndarray input).
+        Intensity arrays, shape (n_features, n_replicates).
+    feature_ids : ndarray
+        Feature identifiers (or range(n_features) for ndarray input).
     cond_1_names, cond_2_names : list
         Resolved column names.
     meta : dict
@@ -117,8 +117,8 @@ def _from_array(
     _raise_if_all_nan_replicates(s1, idx1, parameter_name="cond_1")
     _raise_if_all_nan_replicates(s2, idx2, parameter_name="cond_2")
 
-    protein_ids = np.arange(arr.shape[0], dtype=np.int64)
-    return s1, s2, protein_ids, list(cond_1), list(cond_2), {}
+    feature_ids = np.arange(arr.shape[0], dtype=np.int64)
+    return s1, s2, feature_ids, list(cond_1), list(cond_2), {}
 
 
 def _from_polars(

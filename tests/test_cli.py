@@ -8,7 +8,7 @@ import polars as pl
 import pytest
 from numpy.testing import assert_allclose
 
-from questvar._api import QuestVar, TestResults
+from questvar._api import PowerResults, QuestVar, TestResults
 from questvar._cli import main
 
 
@@ -26,6 +26,40 @@ def _make_test_data(tmp_path: Path, n_prts: int = 50, n_reps: int = 3) -> Path:
 def _make_yaml_config(tmp_path: Path) -> Path:
     path = tmp_path / "config.yaml"
     path.write_text("cv_thr: 0.3\np_thr: 0.01\neq_thr: 0.5\ndf_thr: 1.0\ncorrection: bonferroni\n")
+    return path
+
+
+def _make_power_yaml_config(tmp_path: Path) -> Path:
+    path = tmp_path / "power_config.yaml"
+    path.write_text(
+        "\n".join(
+            [
+                "n_prts: 120",
+                "n_reps: 4",
+                "cv_mean: 0.18",
+                "eq_thr: 0.45",
+                "p_thr: 0.02",
+                "df_thr: 1.1",
+                "cv_thr: 0.9",
+                "correction: holm",
+                "int_mu: 17.5",
+                "int_sd: 1.1",
+                "cv_k: 2.5",
+                "cv_theta: 0.4",
+                "n_iterations: 2",
+                "target_sei: 0.75",
+                "target_power: 0.85",
+                "eq_boundaries: [0.45, 0.55]",
+                "n_reps_grid: [4, 6]",
+                "n_prts_grid: [120, 180]",
+                "cv_mean_grid: [0.18, 0.22]",
+                "cv_thr_grid: [0.9, 1.2]",
+                "random_seed: 123",
+                "n_jobs: 1",
+            ]
+        )
+        + "\n"
+    )
     return path
 
 
@@ -202,6 +236,120 @@ class TestCliPower:
               "--output", str(out)])
         assert out.exists()
 
+    def test_power_full_config_parity_and_overrides(self, tmp_path: Path):
+        config_path = _make_power_yaml_config(tmp_path)
+        out = tmp_path / "power.json"
+
+        main(
+            [
+                "power",
+                "--config", str(config_path),
+                "--eq-thr", "0.6",
+                "--n-reps", "5",
+                "--cv-mean", "0.25",
+                "--cv-thr", "1.3",
+                "--n-prts", "90",
+                "--n-prts-list", "90,140",
+                "--p-thr", "0.03",
+                "--df-thr", "1.4",
+                "--target-sei", "0.7",
+                "--target-power", "0.9",
+                "--correction", "none",
+                "--int-mu", "18.2",
+                "--int-sd", "0.8",
+                "--cv-k", "1.8",
+                "--cv-theta", "0.6",
+                "--random-seed", "7",
+                "--n-iterations", "2",
+                "--n-jobs", "1",
+                "--output", str(out),
+            ]
+        )
+
+        results = PowerResults.load(str(out))
+
+        assert results.config["eq_thr"] == 0.6
+        assert results.config["eq_boundaries"] == [0.6]
+        assert results.config["n_reps"] == 5
+        assert results.config["n_reps_grid"] == [5]
+        assert results.config["cv_mean"] == 0.25
+        assert results.config["cv_mean_grid"] == [0.25]
+        assert results.config["cv_thr"] == 1.3
+        assert results.config["cv_thr_grid"] == [1.3]
+        assert results.config["n_prts"] == 90
+        assert results.config["n_prts_grid"] == [90, 140]
+        assert results.config["p_thr"] == 0.03
+        assert results.config["df_thr"] == 1.4
+        assert results.config["target_sei"] == 0.7
+        assert results.config["target_power"] == 0.9
+        assert results.config["correction"] is None
+        assert results.config["int_mu"] == 18.2
+        assert results.config["int_sd"] == 0.8
+        assert results.config["cv_k"] == 1.8
+        assert results.config["cv_theta"] == 0.6
+        assert results.config["random_seed"] == 7
+        assert results.config["n_iterations"] == 2
+        assert results.config["n_jobs"] == 1
+
+    def test_power_explicit_grid_flags_override_scalar_defaults(self, tmp_path: Path):
+        out = tmp_path / "power.parquet"
+
+        main(
+            [
+                "power",
+                "--eq-thr", "0.6",
+                "--eq-boundaries", "0.4,0.8",
+                "--n-reps", "5",
+                "--n-reps-list", "4,6",
+                "--cv-mean", "0.25",
+                "--cv-mean-list", "0.15,0.35",
+                "--cv-thr", "1.3",
+                "--cv-thr-list", "0.8,1.6",
+                "--n-prts", "100",
+                "--n-prts-list", "100,150",
+                "--n-iterations", "2",
+                "--n-jobs", "1",
+                "--output", str(out),
+            ]
+        )
+
+        results = PowerResults.load(str(out))
+
+        assert results.config["eq_thr"] == 0.6
+        assert results.config["eq_boundaries"] == [0.4, 0.8]
+        assert results.config["n_reps"] == 5
+        assert results.config["n_reps_grid"] == [4, 6]
+        assert results.config["cv_mean"] == 0.25
+        assert results.config["cv_mean_grid"] == [0.15, 0.35]
+        assert results.config["cv_thr"] == 1.3
+        assert results.config["cv_thr_grid"] == [0.8, 1.6]
+        assert results.config["n_prts_grid"] == [100, 150]
+
+    def test_test_command_accepts_correction_none_and_boolean_overrides(self, tmp_path: Path):
+        input_path = _make_test_data(tmp_path)
+        out = tmp_path / "test_none.parquet"
+
+        main(
+            [
+                "test",
+                "--data", str(input_path),
+                "--cond-1", "sample_00,sample_01,sample_02",
+                "--cond-2", "sample_03,sample_04,sample_05",
+                "--correction", "none",
+                "--allow-missing",
+                "--no-var-equal",
+                "--no-is-paired",
+                "--output", str(out),
+            ]
+        )
+
+        results = TestResults.load(str(out))
+
+        assert results.config.correction is None
+        assert results.config.allow_missing is True
+        assert results.config.var_equal is False
+        assert results.config.is_paired is False
+
 
 class TestCliPlot:
     def test_antlers_plot_from_saved_test_results(self, tmp_path: Path):
@@ -247,12 +395,58 @@ class TestCliPlot:
         assert plot_path.exists()
         assert plot_path.stat().st_size > 0
 
+    def test_power_plot_from_saved_power_json_results(self, tmp_path: Path):
+        results_path = tmp_path / "power.json"
+        plot_path = tmp_path / "power_from_json.png"
+
+        main([
+            "power",
+            "--eq-boundaries", "0.5",
+            "--n-reps-list", "5",
+            "--cv-mean-list", "0.20",
+            "--n-prts", "100",
+            "--n-iterations", "2",
+            "--n-jobs", "1",
+            "--output", str(results_path),
+        ])
+        main([
+            "plot",
+            "--results", str(results_path),
+            "--type", "power",
+            "--output", str(plot_path),
+        ])
+
+        assert plot_path.exists()
+        assert plot_path.stat().st_size > 0
+
 
 class TestCliHelp:
-    def test_version(self, tmp_path: Path):
-        input_path = _make_test_data(tmp_path)
-        out = tmp_path / "out.parquet"
-        main(["test", "--data", str(input_path),
-              "--cond-1", "sample_00,sample_01,sample_02",
-              "--cond-2", "sample_03,sample_04,sample_05",
-              "--output", str(out)])
+    def test_version(self, capsys: pytest.CaptureFixture[str]):
+        with pytest.raises(SystemExit):
+            main(["--version"])
+
+        captured = capsys.readouterr()
+        assert "questvar 0.1.0" in captured.out
+
+    def test_power_help_lists_full_power_config_surface(self, capsys: pytest.CaptureFixture[str]):
+        with pytest.raises(SystemExit):
+            main(["power", "--help"])
+
+        help_text = capsys.readouterr().out
+        assert "--cv-thr-list" in help_text
+        assert "--n-prts-list" in help_text
+        assert "--target-sei" in help_text
+        assert "--random-seed" in help_text
+        assert "--correction" in help_text
+        assert ".json" in help_text
+
+    def test_test_help_lists_none_correction_and_boolean_overrides(self, capsys: pytest.CaptureFixture[str]):
+        with pytest.raises(SystemExit):
+            main(["test", "--help"])
+
+        help_text = capsys.readouterr().out
+        assert "--allow-missing" in help_text
+        assert "--no-allow-missing" in help_text
+        assert "--no-is-paired" in help_text
+        assert "--no-var-equal" in help_text
+        assert "qvalue, or none" in help_text

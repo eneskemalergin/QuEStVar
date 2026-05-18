@@ -248,6 +248,15 @@ class TestPlotSummary:
         assert len(fig.ax_ma.collections) == 1
         assert fig.ax_antlers.get_xlabel() == "log₂ Fold Change (Control vs Treatment)"
 
+    def test_summary_panel_text_uses_per_feature_language(self):
+        results = _make_test_results(24, 3)
+
+        fig = results.plot()
+
+        all_text = "\n".join(text.get_text() for ax in fig.axes for text in ax.texts)
+        assert "Per-feature hexbin density" in all_text
+        plt.close(fig)
+
     def test_threshold_lines_remain_visible_at_exact_boundaries(self):
         results = _make_manual_test_results(
             rows=[
@@ -376,8 +385,25 @@ class TestAntlersStandalone:
         results = _make_test_results(24, 3)
         from questvar.plot import antlers
         ids = results.data["feature_id"].to_list()[:5]
-        fig = antlers(results, protein_ids=ids)
+        fig = antlers(results, feature_ids=ids)
         assert hasattr(fig, "ax_main")
+
+    def test_protein_ids_alias_still_works(self):
+        results = _make_test_results(24, 3)
+        from questvar.plot import antlers
+
+        ids = results.data["feature_id"].to_list()[:5]
+        fig = antlers(results, protein_ids=ids)
+
+        assert hasattr(fig, "ax_main")
+
+    def test_annotation_aliases_cannot_be_combined(self):
+        results = _make_test_results(24, 3)
+        from questvar.plot import antlers
+
+        ids = results.data["feature_id"].to_list()[:2]
+        with pytest.raises(ValueError, match="aliases"):
+            antlers(results, feature_ids=ids, protein_ids=ids)
 
     def test_with_top_n(self):
         results = _make_test_results(24, 3)
@@ -412,7 +438,7 @@ class TestAntlersStandalone:
             cond_1_label="Tumor",
             cond_2_label="Normal",
             label_col="missing_label",
-            protein_ids=["ghost"],
+            feature_ids=["ghost"],
             top_n=2,
         )
         assert hasattr(fig, "ax_main")

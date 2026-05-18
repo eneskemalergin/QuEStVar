@@ -6,6 +6,7 @@ from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TESTS_DIR.parent
+SRC_DIR = REPO_ROOT / "src" / "questvar"
 OPT_IN_EXTERNAL_TEST_FILES = {"_r_reference.py", "test_r_references.py"}
 
 
@@ -54,3 +55,33 @@ def test_r_reference_path_is_explicitly_opt_in_only() -> None:
 
     assert 'addopts = ["-m", "not r_reference"]' in pyproject_text
     assert 'pytestmark = pytest.mark.r_reference' in r_reference_test_text
+
+
+def test_source_user_facing_terminology_prefers_feature_over_protein() -> None:
+    allowed_exact_strings = {
+        "for candidate in (\"feature_id\", \"protein_id\"):",
+        "protein_ids: list[str] | None = None,",
+        "feature_ids if feature_ids is not None else protein_ids",
+        "Parameters 'feature_ids' and 'protein_ids' are aliases. Pass only one.",
+        '"""Standalone Antler\'s plot with optional feature annotations.',
+        'Backward-compatible alias for ``feature_ids``.',
+        'Ignored if ``feature_ids`` or ``protein_ids`` is given.',
+        "def annotate_proteins(",
+        "feature_ids=protein_ids,",
+    }
+    forbidden_patterns = [
+        r"Per-protein",
+        r"tested proteins",
+        r"excluded proteins",
+        r"top proteins",
+        r"protein status",
+        r"one per protein",
+        r"n_proteins",
+    ]
+
+    for path in sorted(SRC_DIR.rglob("*.py")):
+        text = path.read_text()
+        for allowed in allowed_exact_strings:
+            text = text.replace(allowed, "")
+        for pattern in forbidden_patterns:
+            assert re.search(pattern, text) is None, f"Unexpected protein terminology in {path.relative_to(REPO_ROOT)}: {pattern}"

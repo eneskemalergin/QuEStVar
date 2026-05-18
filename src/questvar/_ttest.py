@@ -39,7 +39,7 @@ def ttest_ind(
     Parameters
     ----------
     s1, s2 : ndarray
-        Intensity arrays, shape (n_proteins, n_replicates).
+        Intensity arrays, shape (n_features, n_replicates).
     equal_var : bool
         If True, use pooled variance (Student's). Default Welch.
     alternative : str
@@ -48,11 +48,11 @@ def ttest_ind(
     Returns
     -------
     statistic : ndarray
-        t-statistics, one per protein.
+        t-statistics, one per feature.
     pvalue : ndarray
-        p-values, one per protein.
+        p-values, one per feature.
     df : ndarray
-        degrees of freedom, one per protein.
+        degrees of freedom, one per feature.
     """
     s1 = np.asarray(s1, dtype=np.float64)
     s2 = np.asarray(s2, dtype=np.float64)
@@ -79,18 +79,18 @@ def ttest_rel(
     Parameters
     ----------
     s1, s2 : ndarray
-        Paired intensity arrays, shape (n_proteins, n_replicates).
+        Paired intensity arrays, shape (n_features, n_replicates).
     alternative : str
         'two-sided', 'less', or 'greater'.
 
     Returns
     -------
     statistic : ndarray
-        t-statistics, one per protein.
+        t-statistics, one per feature.
     pvalue : ndarray
-        p-values, one per protein.
+        p-values, one per feature.
     df : ndarray
-        degrees of freedom, one per protein.
+        degrees of freedom, one per feature.
     """
     s1 = np.asarray(s1, dtype=np.float64)
     s2 = np.asarray(s2, dtype=np.float64)

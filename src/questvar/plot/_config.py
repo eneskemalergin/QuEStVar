@@ -158,7 +158,7 @@ class PlotConfig:
     annotation_box_edgecolor: str = "#343a40"
 
     # ------------------------------------------------------------------
-    # Protein annotation labels (on data points in Antler's plot)
+    # Feature annotation labels (on data points in Antler's plot)
     # ------------------------------------------------------------------
     annotate_fontsize: int = 9
     annotate_fontweight: str = "bold"
@@ -179,7 +179,7 @@ class PlotConfig:
     """Per-status background and edge colours for annotation label boxes."""
 
     annotate_top_n: int = 5
-    """Default number of top proteins per status to annotate when top_n=True."""
+    """Default number of top features per status to annotate when top_n=True."""
 
     # ------------------------------------------------------------------
     # Colour palette (lines drawn in palette order, jco-inspired)
@@ -198,7 +198,7 @@ class PlotConfig:
     )
 
     # ------------------------------------------------------------------
-    # Category palettes for CV groups, protein status, and heatmaps
+    # Category palettes for CV groups, feature status, and heatmaps
     # ------------------------------------------------------------------
     cv_group_palette: dict[str, str] = field(
         default_factory=lambda: {
@@ -220,7 +220,7 @@ class PlotConfig:
             "Equivalent":   "#003049",
         }
     )
-    """Colour mapping for QuEStVar protein status categories."""
+    """Colour mapping for QuEStVar feature status categories."""
 
     status_order: list[str] = field(
         default_factory=lambda: [

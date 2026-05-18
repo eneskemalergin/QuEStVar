@@ -185,7 +185,7 @@ class QuestVar:
     ) -> TestResults:
         config = replace(self.config, **overrides) if overrides else self.config
 
-        s1_arr, s2_arr, protein_ids, c1, c2, meta = validate_and_extract(
+        s1_arr, s2_arr, feature_ids, c1, c2, meta = validate_and_extract(
             data,
             cond_1,
             cond_2,
@@ -208,7 +208,7 @@ class QuestVar:
         status_all = np.full(s1_arr.shape[0], np.nan)
         info_df = pl.DataFrame(
             {
-                "feature_id": pl.Series("feature_id", protein_ids),
+                "feature_id": pl.Series("feature_id", feature_ids),
                 "s1_cv_status": s1_ps,
                 "s2_cv_status": s2_ps,
                 "status": status_all,
@@ -252,7 +252,7 @@ class QuestVar:
             )
 
         result_dict = {
-            "feature_id": pl.Series("feature_id", protein_ids[keep]),
+            "feature_id": pl.Series("feature_id", feature_ids[keep]),
             "n1": result_arr[:, COL_N1],
             "n2": result_arr[:, COL_N2],
             "log2fc": result_arr[:, COL_LOG2FC],
@@ -292,10 +292,51 @@ class QuestVar:
             for (c1, s1), (c2, s2) in combinations(condition_map.items(), 2)
         }
 
-    def power_analysis(self, **kwargs: Any) -> PowerResults:
+    def power_analysis(
+        self,
+        target_sei: float = 0.8,
+        eq_boundaries: np.ndarray | None = None,
+        n_reps_list: list[int] | None = None,
+        cv_mean_list: list[float] | None = None,
+        cv_thr_list: list[float] | None = None,
+        n_prts_list: list[int] | None = None,
+        random_seed: int | None = None,
+        n_prts: int = 10000,
+        n_iterations: int = 10,
+        target_power: float = 0.8,
+        p_thr: float = 0.05,
+        df_thr: float = 1.0,
+        cv_thr: float = 1.0,
+        correction: str | None = "fdr",
+        int_mu: float = 18.0,
+        int_sd: float = 1.0,
+        cv_k: float = 2.0,
+        cv_theta: float = 0.5,
+        n_jobs: int | None = None,
+    ) -> PowerResults:
         from questvar.power.run import run_power_analysis
 
-        return run_power_analysis(**kwargs)
+        return run_power_analysis(
+            target_sei=target_sei,
+            eq_boundaries=eq_boundaries,
+            n_reps_list=n_reps_list,
+            cv_mean_list=cv_mean_list,
+            cv_thr_list=cv_thr_list,
+            n_prts_list=n_prts_list,
+            random_seed=random_seed,
+            n_prts=n_prts,
+            n_iterations=n_iterations,
+            target_power=target_power,
+            p_thr=p_thr,
+            df_thr=df_thr,
+            cv_thr=cv_thr,
+            correction=correction,
+            int_mu=int_mu,
+            int_sd=int_sd,
+            cv_k=cv_k,
+            cv_theta=cv_theta,
+            n_jobs=n_jobs,
+        )
 
 
 class TestResults:
@@ -465,13 +506,68 @@ class PowerResults:
         self.results = self.design_grid
 
     def summary(self) -> str:
-        lines = ["Power Analysis Results", "=" * 40]
-        for r in self.design_grid:
+        def _numeric_range(rows: list[dict[str, Any]], key: str) -> str:
+            values: list[float] = []
+            for row in rows:
+                value = row.get(key)
+                if isinstance(value, (int, float)) and np.isfinite(value):
+                    values.append(float(value))
+            if not values:
+                return "n/a"
+            lower = min(values)
+            upper = max(values)
+            if lower == upper:
+                return f"{lower:.3f}"
+            return f"{lower:.3f}..{upper:.3f}"
+
+        lines = ["Power Analysis Results", "=" * 40, f"  Design points:      {len(self.design_grid)}"]
+        if self.run_metrics:
+            lines.append(f"  Monte Carlo runs:   {len(self.run_metrics)}")
+        if self.diagnostics:
+            if "n_converged" in self.diagnostics and "n_not_converged" in self.diagnostics:
+                lines.append(
+                    "  Convergence:       "
+                    f" {self.diagnostics['n_converged']} converged, {self.diagnostics['n_not_converged']} not converged"
+                )
+            if "runtime_seconds" in self.diagnostics:
+                lines.append(f"  Runtime (s):        {self.diagnostics['runtime_seconds']:.2f}")
+        if not self.design_grid:
+            return "\n".join(lines)
+
+        grouped_rows: dict[str, list[dict[str, Any]]] = {}
+        for row in self.design_grid:
+            grouped_rows.setdefault(str(row.get("parameter", "unknown")), []).append(row)
+
+        lines.append("  Design ranges:")
+        for parameter in sorted(grouped_rows):
+            rows = grouped_rows[parameter]
+            feasible_count = sum(bool(row.get("feasible", False)) for row in rows)
             lines.append(
-                f"  {r['parameter']}={r['value']:4}  "
-                f"SEI={r['sei_mean']:.3f}  Power={r['power']:.3f}  "
-                f"(n_reps={r['n_reps']}, eq_thr={r['eq_thr']}, cv_mean={r['cv_mean']})"
+                "    "
+                f"{parameter}: {len(rows)} points  "
+                f"value={_numeric_range(rows, 'value')}  "
+                f"SEI={_numeric_range(rows, 'sei_mean')}  "
+                f"Power={_numeric_range(rows, 'power')}  "
+                f"Feasible={feasible_count}/{len(rows)}"
             )
+
+        if self.search_results:
+            lines.append("  Recommended designs:")
+            for row in self.search_results[:5]:
+                if row.get("feasible"):
+                    lines.append(
+                        "    "
+                        f"{row.get('search_for', 'unknown')}: value={row.get('value')}  "
+                        f"n_reps={row.get('n_reps')}  eq_thr={row.get('eq_thr')}  cv_mean={row.get('cv_mean')}"
+                    )
+                else:
+                    lines.append(
+                        "    "
+                        f"{row.get('search_for', 'unknown')}: no feasible design  "
+                        f"reason={row.get('reason', 'unknown')}"
+                    )
+            if len(self.search_results) > 5:
+                lines.append(f"    ... {len(self.search_results) - 5} more")
         return "\n".join(lines)
 
     def save(self, path: str) -> None:
@@ -479,6 +575,7 @@ class PowerResults:
 
         suffix = Path(path).suffix
         stem = Path(path).with_suffix("")
+        save_mode = "design_grid_only"
         if suffix == ".parquet":
             df = pl.DataFrame(self.design_grid)
             df.write_parquet(path)
@@ -489,6 +586,7 @@ class PowerResults:
             df = pl.DataFrame(self.design_grid)
             df.write_csv(path, separator="\t")
         elif suffix == ".json":
+            save_mode = "full_json"
             with open(path, "w") as f:
                 json.dump(self.to_dict(), f, indent=2)
         else:
@@ -497,13 +595,67 @@ class PowerResults:
                 "Supported formats: '.parquet', '.csv', '.tsv', '.json'."
             )
         with open(f"{stem}.meta.json", "w") as f:
-            json.dump({"config": self.config}, f, indent=2)
+            json.dump({"config": self.config, "save_mode": save_mode}, f, indent=2)
 
     @classmethod
     def load(cls, path: str) -> PowerResults:
+        import json
+
         p = Path(path)
         suffix = p.suffix
         stem = p.with_suffix("")
+        if suffix == ".json":
+            with open(path) as f:
+                payload = json.load(f)
+            if not isinstance(payload, dict):
+                raise ValueError(f"PowerResults JSON file must contain a JSON object: {path}")
+
+            config = payload.get("config", {})
+            design_grid = payload.get("design_grid", [])
+            run_metrics = payload.get("run_metrics", [])
+            search_results = payload.get("search_results", [])
+            diagnostics = payload.get("diagnostics", {})
+
+            if not isinstance(config, dict):
+                raise ValueError(
+                    "PowerResults JSON key 'config' must be a mapping, "
+                    f"got {type(config).__name__}."
+                )
+            if not isinstance(design_grid, list):
+                raise ValueError(
+                    "PowerResults JSON key 'design_grid' must be a list, "
+                    f"got {type(design_grid).__name__}."
+                )
+            if not isinstance(run_metrics, list):
+                raise ValueError(
+                    "PowerResults JSON key 'run_metrics' must be a list, "
+                    f"got {type(run_metrics).__name__}."
+                )
+            if not isinstance(search_results, list):
+                raise ValueError(
+                    "PowerResults JSON key 'search_results' must be a list, "
+                    f"got {type(search_results).__name__}."
+                )
+            if not isinstance(diagnostics, dict):
+                raise ValueError(
+                    "PowerResults JSON key 'diagnostics' must be a mapping, "
+                    f"got {type(diagnostics).__name__}."
+                )
+            if design_grid:
+                _validate_frame_columns(
+                    pl.DataFrame(design_grid),
+                    required_columns=_POWER_RESULTS_DESIGN_GRID_COLUMNS,
+                    label="PowerResults JSON design_grid",
+                )
+            return cls(
+                {
+                    "config": config,
+                    "design_grid": design_grid,
+                    "run_metrics": run_metrics,
+                    "search_results": search_results,
+                    "diagnostics": diagnostics,
+                }
+            )
         if suffix == ".parquet":
             df = pl.read_parquet(path)
         elif suffix == ".csv":
@@ -513,7 +665,7 @@ class PowerResults:
         else:
             raise ValueError(
                 f"Parameter 'path' has unsupported input suffix {suffix!r}. "
-                "Supported formats: '.parquet', '.csv', '.tsv'."
+                "Supported formats: '.parquet', '.csv', '.tsv', '.json'."
             )
         if len(df.columns) > 0:
             _validate_frame_columns(

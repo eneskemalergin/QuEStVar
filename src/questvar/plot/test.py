@@ -133,7 +133,7 @@ def plot_summary(
     s2_cv = info["s2_cv_status"].to_numpy().astype(int)
 
     # ------------------------------------------------------------------
-    # String status labels for tested proteins
+    # String status labels for tested features
     # status codes: 1=Equivalent, -1=Differential (up/down by log2fc), 0=Unexplained
     # ------------------------------------------------------------------
     status_str = np.where(
@@ -161,7 +161,7 @@ def plot_summary(
     antler_y = np.where(np.abs(log2fc) < eq_thr, _log_eq, _log_df)
 
     # ------------------------------------------------------------------
-    # Status counts (tested proteins + excluded from info)
+    # Status counts (tested features + excluded from info)
     # ------------------------------------------------------------------
     n_excluded = int(np.sum((s1_cv == -1) | (s2_cv == -1)))
     # Derive counts directly from integer status codes - single pass per condition
@@ -360,7 +360,7 @@ def plot_summary(
 
     for st in scatter_order:
         if st == "Excluded":
-            continue  # excluded proteins have no test results
+            continue  # excluded features have no test results
         mask = status_str == st
         if mask.sum() > 0:
             ax_d.scatter(
@@ -522,8 +522,8 @@ def plot_summary(
 
     # ------------------------------------------------------------------
     # Panel H: sample size comparison
-    # - allow_missing=True  -> per-protein n1/n2 vary -> hexbin density
-    # - allow_missing=False -> all proteins share the same n1/n2 -> annotated summary
+    # - allow_missing=True  -> per-feature n1/n2 vary -> hexbin density
+    # - allow_missing=False -> all features share the same n1/n2 -> annotated summary
     # ------------------------------------------------------------------
     ax_h = fig.add_subplot(gs[2, 3])
     _letter(ax_h, "H")
@@ -536,7 +536,7 @@ def plot_summary(
         n1_unique = np.unique(n1_v.astype(int))
         n2_unique = np.unique(n2_v.astype(int))
         if len(n1_unique) > 1 or len(n2_unique) > 1:
-            # Variable per-protein sample sizes: hexbin density plot
+            # Variable per-feature sample sizes: hexbin density plot
             max_bins = max(min(20, len(n1_unique), len(n2_unique)), 2)
             hb = ax_h.hexbin(
                 n1_v, n2_v,
@@ -664,7 +664,7 @@ def plot_summary(
         + r"$\mathbf{E)}$ MA Plot: Mean expression vs log fold change with threshold regions" + "\n"
         + r"$\mathbf{F)}$ Category Distribution: Feature counts per testing outcome" + "\n"
         + r"$\mathbf{G)}$ Exclusion Matrix: CV filter status cross-tabulation by condition" + "\n"
-        + r"$\mathbf{H)}$ Sample Size: Per-protein hexbin density (variable N) or fixed N per condition"
+        + r"$\mathbf{H)}$ Sample Size: Per-feature hexbin density (variable N) or fixed N per condition"
     )
 
     ax_left.text(

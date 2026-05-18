@@ -170,6 +170,85 @@ class TestPowerAnalysis:
                 else:
                     assert left_value == right_value
 
+    def test_summary_groups_large_design_grids(self):
+        design_grid = [
+            {
+                "parameter": "n_reps",
+                "value": float(index + 3),
+                "n_reps": index + 3,
+                "eq_thr": 0.5,
+                "cv_mean": 0.2,
+                "cv_thr": 1.0,
+                "power": min(0.4 + index * 0.02, 0.95),
+                "sei_mean": min(0.5 + index * 0.015, 0.9),
+                "feasible": index % 2 == 0,
+            }
+            for index in range(24)
+        ]
+        results = PowerResults(
+            {
+                "config": {},
+                "design_grid": design_grid,
+                "run_metrics": [{"run_id": index} for index in range(48)],
+                "search_results": [],
+                "diagnostics": {"n_converged": 18, "n_not_converged": 6, "runtime_seconds": 12.34},
+            }
+        )
+
+        summary = results.summary()
+        lines = summary.splitlines()
+
+        assert "Design points:      24" in summary
+        assert "Monte Carlo runs:   48" in summary
+        assert "n_reps: 24 points" in summary
+        assert "Power=0.400..0.860" in summary
+        assert "SEI=0.500..0.845" in summary
+        assert len(lines) < 12
+
+    def test_summary_includes_recommended_designs(self):
+        results = PowerResults(
+            {
+                "config": {},
+                "design_grid": [
+                    {
+                        "parameter": "n_reps",
+                        "value": 5.0,
+                        "n_reps": 5,
+                        "eq_thr": 0.5,
+                        "cv_mean": 0.2,
+                        "cv_thr": 1.0,
+                        "power": 0.81,
+                        "sei_mean": 0.84,
+                        "feasible": True,
+                    }
+                ],
+                "run_metrics": [],
+                "search_results": [
+                    {
+                        "search_for": "n_reps",
+                        "value": 5,
+                        "n_reps": 5,
+                        "eq_thr": 0.5,
+                        "cv_mean": 0.2,
+                        "feasible": True,
+                    },
+                    {
+                        "search_for": "cv_mean",
+                        "value": 0.3,
+                        "feasible": False,
+                        "reason": "target power not reached",
+                    },
+                ],
+                "diagnostics": {},
+            }
+        )
+
+        summary = results.summary()
+
+        assert "Recommended designs:" in summary
+        assert "n_reps: value=5" in summary
+        assert "cv_mean: no feasible design" in summary
+
     def test_compare_reports_power_deltas(self):
         base = run_power_analysis(
             eq_boundaries=[0.5],

@@ -203,8 +203,8 @@ def _simulate_design_point(args: tuple) -> list[dict]:
         n_equiv = int(np.sum(status_full == 1))
         n_diff = int(np.sum(status_full == -1))
         n_ns = int(np.sum(status_full == 0))
-        # SEI is based on tested proteins only (CV-filtered denominator).
-        # Excluded proteins cannot be assessed, so they should not penalise the score.
+        # SEI is based on tested features only (CV-filtered denominator).
+        # Excluded features cannot be assessed, so they should not penalise the score.
         sei = n_equiv / n_tested if n_tested > 0 else 0.0
         equiv_rate = n_equiv / n_total
         ns_rate = n_ns / n_total
@@ -212,7 +212,7 @@ def _simulate_design_point(args: tuple) -> list[dict]:
         # equivalent, so `diff_rate` is the false-differential fraction across
         # all simulated features.
         diff_rate = n_diff / n_total
-        # false_diff_rate: proportion of tested (truly-equivalent) proteins incorrectly called differential
+        # false_diff_rate: proportion of tested (truly-equivalent) features incorrectly called differential
         false_diff_rate = n_diff / n_tested if n_tested > 0 else 0.0
 
         metrics.append(

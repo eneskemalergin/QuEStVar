@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import numpy as np
 import polars as pl
@@ -10,6 +11,7 @@ from questvar._api import QuestVar
 from questvar._api import PowerResults
 from questvar._api import TestResults as _TestResults
 from questvar._config import TestConfig
+from questvar.power.run import run_power_analysis
 from questvar.test import test as qv_test
 
 
@@ -77,6 +79,38 @@ def _make_powerresults_with_extras() -> PowerResults:
 
 
 class TestQuestVar:
+    def test_power_analysis_signature_matches_run_power_analysis(self):
+        wrapper_signature = inspect.signature(QuestVar.power_analysis)
+        helper_signature = inspect.signature(run_power_analysis)
+
+        wrapper_parameters = list(wrapper_signature.parameters.values())[1:]
+        helper_parameters = list(helper_signature.parameters.values())
+
+        assert [parameter.name for parameter in wrapper_parameters] == [
+            parameter.name for parameter in helper_parameters
+        ]
+        assert [parameter.kind for parameter in wrapper_parameters] == [
+            parameter.kind for parameter in helper_parameters
+        ]
+        assert [parameter.default for parameter in wrapper_parameters] == [
+            parameter.default for parameter in helper_parameters
+        ]
+
+    def test_public_api_signatures_use_stable_parameter_names(self):
+        questvar_test = list(inspect.signature(QuestVar.test).parameters.values())[1:]
+        quick_test = list(inspect.signature(qv_test).parameters.values())
+        testresults_save = list(inspect.signature(_TestResults.save).parameters.values())[1:]
+        testresults_load = list(inspect.signature(_TestResults.load).parameters.values())
+        powerresults_save = list(inspect.signature(PowerResults.save).parameters.values())[1:]
+        powerresults_load = list(inspect.signature(PowerResults.load).parameters.values())
+
+        assert [parameter.name for parameter in questvar_test[:3]] == ["data", "cond_1", "cond_2"]
+        assert [parameter.name for parameter in quick_test[:3]] == ["data", "cond_1", "cond_2"]
+        assert [parameter.name for parameter in testresults_save] == ["path"]
+        assert [parameter.name for parameter in testresults_load] == ["path"]
+        assert [parameter.name for parameter in powerresults_save] == ["path"]
+        assert [parameter.name for parameter in powerresults_load] == ["path"]
+
     def test_init_defaults(self):
         qv = QuestVar()
         assert qv.config.cv_thr == 1.0
@@ -648,6 +682,19 @@ class TestPowerResultsSaveLoad:
         assert len(loaded.design_grid) > 0
         assert loaded.config.get("cv_mean") is not None
 
+    def test_save_load_json_roundtrip_preserves_full_payload(self, tmp_path):
+        original = _make_powerresults_with_extras()
+        path = tmp_path / "power.json"
+
+        original.save(str(path))
+        loaded = PowerResults.load(str(path))
+
+        assert loaded.config == original.config
+        assert loaded.design_grid == original.design_grid
+        assert loaded.run_metrics == original.run_metrics
+        assert loaded.search_results == original.search_results
+        assert loaded.diagnostics == original.diagnostics
+
     def test_save_load_csv_roundtrip_preserves_design_grid_and_config_only(self, tmp_path):
         original = _make_powerresults_with_extras()
         path = tmp_path / "power.csv"
@@ -694,6 +741,7 @@ class TestPowerResultsSaveLoad:
         with open(meta_path) as f:
             meta = json.load(f)
         assert "config" in meta
+        assert meta["save_mode"] == "design_grid_only"
 
     def test_load_without_meta_sidecar_uses_empty_config(self, tmp_path):
         from questvar.power.run import run_power_analysis
