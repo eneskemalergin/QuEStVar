@@ -62,10 +62,11 @@ class TestConfig(_ConfigMixin):
         if self.df_thr <= self.eq_thr:
             raise ValueError(f"df_thr ({self.df_thr}) must be > eq_thr ({self.eq_thr})")
         if self.cv_thr <= 0:
-            raise ValueError(f"cv_thr must be > 0, got {self.cv_thr}")
+            raise ValueError(f"Parameter 'cv_thr' must be > 0, got {self.cv_thr}")
         if self.correction not in VALID_CORRECTIONS:
             raise ValueError(
-                f"Unknown correction: {self.correction}. Valid: {VALID_CORRECTIONS}"
+                f"Parameter 'correction' has unsupported value {self.correction!r}. "
+                f"Valid values: {sorted(VALID_CORRECTIONS, key=str)}"
             )
 
 
@@ -98,28 +99,37 @@ class PowerConfig(_ConfigMixin):
         if self.df_thr <= self.eq_thr:
             raise ValueError(f"df_thr ({self.df_thr}) must be > eq_thr ({self.eq_thr})")
         if self.cv_thr <= 0:
-            raise ValueError(f"cv_thr must be > 0, got {self.cv_thr}")
+            raise ValueError(f"Parameter 'cv_thr' must be > 0, got {self.cv_thr}")
         if self.n_prts < 1:
-            raise ValueError(f"n_prts must be >= 1, got {self.n_prts}")
+            raise ValueError(f"Parameter 'n_prts' must be >= 1, got {self.n_prts}")
         if self.n_reps < 2:
-            raise ValueError(f"n_reps must be >= 2, got {self.n_reps}")
+            raise ValueError(f"Parameter 'n_reps' must be >= 2, got {self.n_reps}")
         if not 0 < self.cv_mean < 2:
-            raise ValueError(f"cv_mean must be a ratio in (0, 2), got {self.cv_mean}")
+            raise ValueError(
+                f"Parameter 'cv_mean' must be a ratio in (0, 2), got {self.cv_mean}"
+            )
         if self.cv_k <= 0:
-            raise ValueError(f"cv_k must be > 0, got {self.cv_k}")
+            raise ValueError(f"Parameter 'cv_k' must be > 0, got {self.cv_k}")
         if self.cv_theta <= 0:
-            raise ValueError(f"cv_theta must be > 0, got {self.cv_theta}")
+            raise ValueError(f"Parameter 'cv_theta' must be > 0, got {self.cv_theta}")
         if self.int_sd <= 0:
-            raise ValueError(f"int_sd must be > 0, got {self.int_sd}")
+            raise ValueError(f"Parameter 'int_sd' must be > 0, got {self.int_sd}")
         if self.n_iterations < 1:
-            raise ValueError(f"n_iterations must be >= 1, got {self.n_iterations}")
+            raise ValueError(
+                f"Parameter 'n_iterations' must be >= 1, got {self.n_iterations}"
+            )
         if not 0 < self.target_sei <= 1:
-            raise ValueError(f"target_sei must be in (0, 1], got {self.target_sei}")
+            raise ValueError(
+                f"Parameter 'target_sei' must be in (0, 1], got {self.target_sei}"
+            )
         if not 0 < self.target_power <= 1:
-            raise ValueError(f"target_power must be in (0, 1], got {self.target_power}")
+            raise ValueError(
+                f"Parameter 'target_power' must be in (0, 1], got {self.target_power}"
+            )
         if self.correction not in VALID_CORRECTIONS:
             raise ValueError(
-                f"Unknown correction: {self.correction}. Valid: {VALID_CORRECTIONS}"
+                f"Parameter 'correction' has unsupported value {self.correction!r}. "
+                f"Valid values: {sorted(VALID_CORRECTIONS, key=str)}"
             )
 
         object.__setattr__(self, "eq_boundaries", _as_float_tuple(self.eq_boundaries))
@@ -129,22 +139,38 @@ class PowerConfig(_ConfigMixin):
         object.__setattr__(self, "cv_thr_grid", _as_float_tuple(self.cv_thr_grid))
 
         if len(self.eq_boundaries) == 0:
-            raise ValueError("eq_boundaries must not be empty")
+            raise ValueError("Parameter 'eq_boundaries' must not be empty")
         if len(self.n_reps_grid) == 0:
-            raise ValueError("n_reps_grid must not be empty")
+            raise ValueError("Parameter 'n_reps_grid' must not be empty")
         if len(self.cv_mean_grid) == 0:
-            raise ValueError("cv_mean_grid must not be empty")
+            raise ValueError("Parameter 'cv_mean_grid' must not be empty")
         if len(self.cv_thr_grid) == 0:
-            raise ValueError("cv_thr_grid must not be empty")
+            raise ValueError("Parameter 'cv_thr_grid' must not be empty")
 
-        if any(boundary <= 0 for boundary in self.eq_boundaries):
-            raise ValueError("eq_boundaries values must be > 0")
-        if any(reps < 2 for reps in self.n_reps_grid):
-            raise ValueError("n_reps_grid values must be >= 2")
-        if any(cv <= 0 for cv in self.cv_mean_grid):
-            raise ValueError("cv_mean_grid values must be > 0")
-        if any(cv_thr <= 0 for cv_thr in self.cv_thr_grid):
-            raise ValueError("cv_thr_grid values must be > 0")
+        invalid_eq_boundaries = [boundary for boundary in self.eq_boundaries if boundary <= 0]
+        if invalid_eq_boundaries:
+            raise ValueError(
+                "Parameter 'eq_boundaries' must contain only values > 0, "
+                f"got invalid values {invalid_eq_boundaries}."
+            )
+        invalid_n_reps = [reps for reps in self.n_reps_grid if reps < 2]
+        if invalid_n_reps:
+            raise ValueError(
+                "Parameter 'n_reps_grid' must contain only values >= 2, "
+                f"got invalid values {invalid_n_reps}."
+            )
+        invalid_cv_mean = [cv for cv in self.cv_mean_grid if cv <= 0]
+        if invalid_cv_mean:
+            raise ValueError(
+                "Parameter 'cv_mean_grid' must contain only values > 0, "
+                f"got invalid values {invalid_cv_mean}."
+            )
+        invalid_cv_thr = [cv_thr for cv_thr in self.cv_thr_grid if cv_thr <= 0]
+        if invalid_cv_thr:
+            raise ValueError(
+                "Parameter 'cv_thr_grid' must contain only values > 0, "
+                f"got invalid values {invalid_cv_thr}."
+            )
 
 
 def _as_float_tuple(values: tuple[float, ...] | list[float]) -> tuple[float, ...]:

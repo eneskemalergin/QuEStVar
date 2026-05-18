@@ -53,7 +53,10 @@ def validate_and_extract(
     if isinstance(data, pl.DataFrame):
         return _from_polars(data, cond_1, cond_2, cv_thr)
 
-    raise TypeError(f"Expected pl.DataFrame or np.ndarray, got {type(data).__name__}")
+    raise TypeError(
+        "Parameter 'data' must be a polars.DataFrame or numpy.ndarray, "
+        f"got {type(data).__name__}."
+    )
 
 
 def _from_array(
@@ -67,21 +70,35 @@ def _from_array(
 ]:
     arr = np.asarray(data, dtype=np.float64)
     if arr.ndim != 2:
-        raise ValueError(f"Expected 2D array, got {arr.ndim}D")
+        raise ValueError(
+            f"Parameter 'data' must be a 2D ndarray for ndarray input, got {arr.ndim}D."
+        )
 
     if not isinstance(cond_1[0], int):
-        raise TypeError("cond_1 and cond_2 must be integer indices for ndarray input")
+        raise TypeError(
+            "Parameters 'cond_1' and 'cond_2' must contain integer column indices "
+            f"for ndarray input, got first cond_1 value {cond_1[0]!r} "
+            f"({type(cond_1[0]).__name__})."
+        )
 
     idx1 = [int(c) for c in cond_1]
     idx2 = [int(c) for c in cond_2]
 
     if len(idx1) < 2:
-        raise ValueError("cond_1 must have at least 2 replicates")
+        raise ValueError(
+            f"Parameter 'cond_1' must contain at least 2 replicate indices, got {len(idx1)}: {idx1}."
+        )
     if len(idx2) < 2:
-        raise ValueError("cond_2 must have at least 2 replicates")
+        raise ValueError(
+            f"Parameter 'cond_2' must contain at least 2 replicate indices, got {len(idx2)}: {idx2}."
+        )
 
-    if max(idx1 + idx2) >= arr.shape[1]:
-        raise ValueError("Column index out of range")
+    max_index = max(idx1 + idx2)
+    if max_index >= arr.shape[1]:
+        raise ValueError(
+            "Parameters 'cond_1'/'cond_2' contain an out-of-range column index: "
+            f"max requested index={max_index}, data has {arr.shape[1]} columns."
+        )
 
     if cv_thr <= 0:
         raise ValueError(f"cv_thr must be > 0, got {cv_thr}")
@@ -104,21 +121,33 @@ def _from_polars(
 ]:
 
     if not isinstance(cond_1[0], str):
-        raise TypeError("cond_1 and cond_2 must be column names for DataFrame input")
+        raise TypeError(
+            "Parameters 'cond_1' and 'cond_2' must contain column names for DataFrame input, "
+            f"got first cond_1 value {cond_1[0]!r} ({type(cond_1[0]).__name__})."
+        )
 
     cols = data.columns
 
     for c in cond_1 + cond_2:
         if c not in cols:
-            raise ValueError(f"Column '{c}' not found in DataFrame")
+            raise ValueError(
+                f"Parameter 'cond_1'/'cond_2' references missing DataFrame column {c!r}."
+            )
 
-    if len(set(cond_1) & set(cond_2)):
-        raise ValueError("cond_1 and cond_2 must not share columns")
+    shared = sorted(set(cond_1) & set(cond_2))
+    if shared:
+        raise ValueError(
+            f"Parameters 'cond_1' and 'cond_2' must not share columns, got overlap: {shared}."
+        )
 
     if len(cond_1) < 2:
-        raise ValueError("cond_1 must have at least 2 replicates")
+        raise ValueError(
+            f"Parameter 'cond_1' must contain at least 2 replicate columns, got {len(cond_1)}: {cond_1}."
+        )
     if len(cond_2) < 2:
-        raise ValueError("cond_2 must have at least 2 replicates")
+        raise ValueError(
+            f"Parameter 'cond_2' must contain at least 2 replicate columns, got {len(cond_2)}: {cond_2}."
+        )
 
     if cv_thr <= 0:
         raise ValueError(f"cv_thr must be > 0, got {cv_thr}")

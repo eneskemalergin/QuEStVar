@@ -299,21 +299,21 @@ class TestPlotPower:
         results = _make_power_results(
             [_make_power_row(parameter="eq_thr", eq_thr=0.3, n_reps=5, power=0.8)]
         )
-        with pytest.raises(ValueError, match="No lines to plot after filtering n_reps"):
+        with pytest.raises(ValueError, match="No power-profile lines remain"):
             results.plot(n_reps=[99])
 
     def test_negative_ci_raises_value_error(self):
         results = _make_power_results(
             [_make_power_row(parameter="eq_thr", eq_thr=0.3, n_reps=5, power=0.8)]
         )
-        with pytest.raises(ValueError, match="ci must be >= 0"):
+        with pytest.raises(ValueError, match="Parameter 'ci' must be >= 0"):
             results.plot(ci=-0.5)
 
     def test_invalid_kind(self):
         results = PowerResults({"config": {}, "design_grid": [],
                                 "run_metrics": [], "search_results": [],
                                 "diagnostics": {}})
-        with pytest.raises(ValueError, match="Unknown PowerResults"):
+        with pytest.raises(ValueError, match="Parameter 'kind'"):
             results.plot(kind="invalid_kind")
 
 

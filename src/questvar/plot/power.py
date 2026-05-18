@@ -101,7 +101,7 @@ def plot_power(
     pc = config or PlotConfig()
     ci_mult = ci if ci is not None else pc.ci_multiplier
     if ci_mult < 0:
-        raise ValueError("ci must be >= 0")
+        raise ValueError(f"Parameter 'ci' must be >= 0, got {ci_mult}")
 
     # ------------------------------------------------------------------
     # Extract lines: n_reps -> [(eq_thr, power, power_se), ...]
@@ -131,7 +131,10 @@ def plot_power(
             lines[nr] = (list(xs), list(ys), list(es))
 
     if not lines:
-        raise ValueError("No lines to plot after filtering n_reps.")
+        raise ValueError(
+            "No power-profile lines remain after applying parameter 'n_reps' filter "
+            f"with n_reps={list(n_reps) if n_reps is not None else n_reps}."
+        )
 
     # ------------------------------------------------------------------
     # Pull scalar parameters from config dict

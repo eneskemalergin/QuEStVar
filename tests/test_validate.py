@@ -88,7 +88,7 @@ class TestValidatePolars:
 
     def test_column_not_found(self):
         df = _make_proteomics_df(50, 3)
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(ValueError, match="missing DataFrame column"):
             validate_and_extract(df, ["nonexistent"], ["s3", "s4"], cv_thr=0.15)
 
     def test_too_few_replicates(self):
@@ -127,7 +127,7 @@ class TestValidatePolars:
             validate_and_extract(df, ["s0", "s1", "s2"], ["s3", "s4", "s5"], cv_thr=-0.1)
 
     def test_invalid_input_type(self):
-        with pytest.raises(TypeError, match="Expected"):
+        with pytest.raises(TypeError, match="Parameter 'data'"):
             validate_and_extract("invalid", [0, 1], [2, 3], cv_thr=0.15)
 
 
@@ -145,7 +145,7 @@ class TestValidateNumpy:
     def test_column_index_out_of_range(self):
         rng = np.random.default_rng(42)
         arr = rng.lognormal(18, 0.5, (50, 4))
-        with pytest.raises(ValueError, match="out of range"):
+        with pytest.raises(ValueError, match="out-of-range column index"):
             validate_and_extract(arr, [0, 1], [2, 5], cv_thr=0.15)
 
     def test_not_2d(self):
@@ -155,7 +155,7 @@ class TestValidateNumpy:
 
     def test_string_indices_for_numpy(self):
         arr = np.random.default_rng(42).lognormal(18, 0.5, (10, 4))
-        with pytest.raises(TypeError, match="integer indices"):
+        with pytest.raises(TypeError, match="integer column indices"):
             validate_and_extract(arr, ["a", "b"], [2, 3], cv_thr=0.15)
 
     def test_int_indices_for_polars(self):
@@ -191,7 +191,7 @@ class TestValidateProperties:
         arr, cond_1, cond_2, cv_thr = case
         bad_cond_2 = list(cond_2)
         bad_cond_2[-1] = arr.shape[1] - 1 + overshoot
-        with pytest.raises(ValueError, match="out of range"):
+        with pytest.raises(ValueError, match="out-of-range column index"):
             validate_and_extract(arr, cond_1, bad_cond_2, cv_thr=cv_thr)
 
     @settings(deadline=None, max_examples=40)

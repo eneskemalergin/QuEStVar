@@ -37,7 +37,10 @@ def simulate_data(
     cv_dist = cv_dist[:, np.newaxis]
 
     if np.any(mean_dist == 0):
-        raise ValueError("Mean values cannot be zero for log-normal distribution.")
+        raise ValueError(
+            "Simulated mean intensities derived from parameters 'int_mu'/'int_sd' "
+            "must be non-zero for the log-normal distribution."
+        )
 
     sd_dist = mean_dist * cv_dist
     mu_ln = np.log(mean_dist**2 / np.sqrt(sd_dist**2 + mean_dist**2))

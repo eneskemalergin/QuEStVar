@@ -103,16 +103,16 @@ class TestTestConfig:
             TestConfig(df_thr=1.0, eq_thr=1.0)
 
     def test_cv_thr_range(self):
-        with pytest.raises(ValueError, match="cv_thr must be"):
+        with pytest.raises(ValueError, match="Parameter 'cv_thr'"):
             TestConfig(cv_thr=0.0)
-        with pytest.raises(ValueError, match="cv_thr must be"):
+        with pytest.raises(ValueError, match="Parameter 'cv_thr'"):
             TestConfig(cv_thr=-0.1)
         TestConfig(cv_thr=0.01)
         TestConfig(cv_thr=1.0)
         TestConfig(cv_thr=1.5)
 
     def test_unknown_correction(self):
-        with pytest.raises(ValueError, match="Unknown correction"):
+        with pytest.raises(ValueError, match="Parameter 'correction'"):
             TestConfig(correction="invalid")
 
     def test_valid_corrections(self):
@@ -177,7 +177,7 @@ class TestTestConfig:
     @settings(deadline=None, max_examples=30)
     @given(st.floats(max_value=0.0, allow_nan=False, allow_infinity=False))
     def test_invalid_cv_thr_property(self, cv_thr):
-        with pytest.raises(ValueError, match="cv_thr must be"):
+        with pytest.raises(ValueError, match="Parameter 'cv_thr'"):
             TestConfig(cv_thr=cv_thr)
 
     @settings(deadline=None, max_examples=30)
@@ -206,9 +206,9 @@ class TestPowerConfig:
             PowerConfig(df_thr=0.3, eq_thr=0.5)
 
     def test_target_validation(self):
-        with pytest.raises(ValueError, match="target_sei must be in"):
+        with pytest.raises(ValueError, match="Parameter 'target_sei'"):
             PowerConfig(target_sei=0.0)
-        with pytest.raises(ValueError, match="target_power must be in"):
+        with pytest.raises(ValueError, match="Parameter 'target_power'"):
             PowerConfig(target_power=1.5)
 
     def test_grid_coercion(self):
@@ -257,11 +257,11 @@ class TestPowerConfig:
     @settings(deadline=None, max_examples=25)
     @given(st.floats(max_value=0.0, allow_nan=False, allow_infinity=False))
     def test_invalid_cv_thr_property(self, cv_thr):
-        with pytest.raises(ValueError, match="cv_thr must be"):
+        with pytest.raises(ValueError, match="Parameter 'cv_thr'"):
             PowerConfig(cv_thr=cv_thr)
 
     @settings(deadline=None, max_examples=25)
     @given(st.integers(max_value=0))
     def test_invalid_n_prts_property(self, n_prts):
-        with pytest.raises(ValueError, match="n_prts must be"):
+        with pytest.raises(ValueError, match="Parameter 'n_prts'"):
             PowerConfig(n_prts=n_prts)

@@ -184,7 +184,10 @@ class QuestVar:
         keep = (s1_ps > 0) & (s2_ps > 0)
 
         if not keep.any():
-            raise ValueError("No features passed CV filter")
+            raise ValueError(
+                "No features passed the CV filter with parameters "
+                f"cv_thr={config.cv_thr}, cond_1={c1}, cond_2={c2}."
+            )
 
         s1_ready = s1_arr[keep]
         s2_ready = s2_arr[keep]
@@ -317,7 +320,10 @@ class TestResults:
             self.data.write_csv(path, separator="\t")
             self.info.write_csv(f"{stem}.info.tsv", separator="\t")
         else:
-            raise ValueError(f"Unknown format: {suffix}")
+            raise ValueError(
+                f"Parameter 'path' has unsupported output suffix {suffix!r}. "
+                "Supported formats: '.parquet', '.csv', '.tsv'."
+            )
         meta: dict[str, Any] = {
             "config": self.config.to_dict(),
             "cond_1": self.cond_1,
@@ -346,7 +352,10 @@ class TestResults:
             data = pl.read_csv(path, separator="\t")
             info = pl.read_csv(info_path, separator="\t")
         else:
-            raise ValueError(f"Unknown format: {suffix}")
+            raise ValueError(
+                f"Parameter 'path' has unsupported input suffix {suffix!r}. "
+                "Supported formats: '.parquet', '.csv', '.tsv'."
+            )
         _validate_frame_columns(
             data,
             required_columns=_TEST_RESULTS_DATA_COLUMNS,
@@ -364,9 +373,15 @@ class TestResults:
         assert meta is not None
         config_payload = meta["config"]
         if not isinstance(config_payload, dict):
-            raise ValueError("Metadata config must be a mapping")
+            raise ValueError(
+                "Metadata key 'config' must be a mapping, "
+                f"got {type(config_payload).__name__}."
+            )
         if not isinstance(meta["cond_1"], list) or not isinstance(meta["cond_2"], list):
-            raise ValueError("Metadata cond_1 and cond_2 must be lists")
+            raise ValueError(
+                "Metadata keys 'cond_1' and 'cond_2' must be lists, "
+                f"got cond_1={type(meta['cond_1']).__name__}, cond_2={type(meta['cond_2']).__name__}."
+            )
         config = TestConfig.from_dict(config_payload)
         return cls(data, config, meta["cond_1"], meta["cond_2"], info)
 
@@ -449,7 +464,10 @@ class PowerResults:
             with open(path, "w") as f:
                 json.dump(self.to_dict(), f, indent=2)
         else:
-            raise ValueError(f"Unknown format: {suffix}")
+            raise ValueError(
+                f"Parameter 'path' has unsupported output suffix {suffix!r}. "
+                "Supported formats: '.parquet', '.csv', '.tsv', '.json'."
+            )
         with open(f"{stem}.meta.json", "w") as f:
             json.dump({"config": self.config}, f, indent=2)
 
@@ -465,7 +483,10 @@ class PowerResults:
         elif suffix == ".tsv":
             df = pl.read_csv(path, separator="\t")
         else:
-            raise ValueError(f"Unknown format: {suffix}")
+            raise ValueError(
+                f"Parameter 'path' has unsupported input suffix {suffix!r}. "
+                "Supported formats: '.parquet', '.csv', '.tsv'."
+            )
         if len(df.columns) > 0:
             _validate_frame_columns(
                 df,
@@ -478,7 +499,10 @@ class PowerResults:
         if meta is not None:
             config = meta.get("config", {})
             if not isinstance(config, dict):
-                raise ValueError("Metadata config must be a mapping")
+                raise ValueError(
+                    "Metadata key 'config' must be a mapping, "
+                    f"got {type(config).__name__}."
+                )
         return cls({
             "config": config,
             "design_grid": design_grid,
@@ -498,13 +522,19 @@ class PowerResults:
 
     def to_frame(self, level: str = "design_grid") -> pl.DataFrame:
         if level not in self.to_dict():
-            raise ValueError(f"Unknown PowerResults level: {level}")
+            raise ValueError(
+                f"Parameter 'level' has unsupported PowerResults section {level!r}. "
+                f"Valid levels: {sorted(self.to_dict())}."
+            )
         payload = self.to_dict()[level]
         if isinstance(payload, dict):
             return pl.DataFrame([payload])
         if isinstance(payload, list):
             return pl.DataFrame(payload)
-        raise ValueError("PowerResults level must be a dict or list-like tabular payload")
+        raise ValueError(
+            f"PowerResults level {level!r} must contain a dict or list-like tabular payload, "
+            f"got {type(payload).__name__}."
+        )
 
     def optimal_design(self, search_for: str = "n_reps") -> dict[str, Any] | None:
         for row in self.search_results:
@@ -562,16 +592,25 @@ class PowerResults:
         elif isinstance(other, dict):
             other_payload = other
         else:
-            raise TypeError("other must be a PowerResults-like object or dict")
+            raise TypeError(
+                f"Parameter 'other' must be a PowerResults-like object or dict, got {type(other).__name__}."
+            )
 
         left_rows = self.to_dict().get(level, [])
         right_rows = other_payload.get(level, [])
         if not isinstance(left_rows, list) or not isinstance(right_rows, list):
-            raise ValueError("compare() requires a tabular list-like level")
+            raise ValueError(
+                f"compare(level={level!r}) requires list-like tabular payloads on both sides, "
+                f"got {type(left_rows).__name__} and {type(right_rows).__name__}."
+            )
         if not all(isinstance(row, Mapping) for row in left_rows):
-            raise ValueError("compare() requires mapping-like rows in the selected level")
+            raise ValueError(
+                f"compare(level={level!r}) requires mapping-like rows in 'self', got non-mapping entries."
+            )
         if not all(isinstance(row, Mapping) for row in right_rows):
-            raise ValueError("compare() requires mapping-like rows in the selected level")
+            raise ValueError(
+                f"compare(level={level!r}) requires mapping-like rows in 'other', got non-mapping entries."
+            )
 
         keys = [
             "parameter",
@@ -608,5 +647,8 @@ class PowerResults:
             "power_profile": plot_power
         }
         if kind not in plotters:
-            raise ValueError(f"Unknown PowerResults plot kind: {kind}")
+            raise ValueError(
+                f"Parameter 'kind' has unsupported PowerResults plot type {kind!r}. "
+                f"Valid kinds: {sorted(plotters)}."
+            )
         return plotters[kind](self, **kwargs)

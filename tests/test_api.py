@@ -132,7 +132,7 @@ class TestQuestVar:
         )
         import pytest
 
-        with pytest.raises(ValueError, match="Unknown format"):
+        with pytest.raises(ValueError, match="unsupported output suffix"):
             result.save(str(tmp_path / "test.txt"))
 
     def test_compare_all_pairs_returns_all_pairwise_results(self):
@@ -165,7 +165,7 @@ class TestQuestVar:
         qv = QuestVar(cv_thr=0.1)
         import pytest
 
-        with pytest.raises(ValueError, match="No features passed CV filter"):
+        with pytest.raises(ValueError, match="No features passed the CV filter"):
             qv.test(data, cond_1=[0, 1], cond_2=[2, 3])
 
     def test_is_log2_false_matches_manual_log2_pipeline(self):
@@ -257,7 +257,7 @@ class TestValidateExtract:
         qv = QuestVar()
         import pytest
 
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(ValueError, match="missing DataFrame column"):
             qv.test(df, cond_1=["nonexistent"], cond_2=["sample_03", "sample_04"])
 
     def test_too_few_replicates(self):
@@ -282,7 +282,7 @@ class TestValidateExtract:
         qv = QuestVar()
         import pytest
 
-        with pytest.raises(TypeError, match="Expected"):
+        with pytest.raises(TypeError, match="Parameter 'data'"):
             qv.test("invalid", cond_1=[0, 1], cond_2=[2, 3])
 
     def test_cv_thr_out_of_range(self):
@@ -291,7 +291,7 @@ class TestValidateExtract:
         qv = QuestVar()
         import pytest
 
-        with pytest.raises(ValueError, match="cv_thr must be"):
+        with pytest.raises(ValueError, match="Parameter 'cv_thr' must be > 0"):
             qv.test(data, cond_1=[0, 1, 2], cond_2=[3, 4, 5], cv_thr=0.0)
 
 
@@ -381,7 +381,7 @@ class TestTestResultsSaveLoad:
         with open(tmp_path / "results.meta.json", "w") as f:
             json.dump({"config": "bad", "cond_1": ["sample_00"], "cond_2": ["sample_03"]}, f)
 
-        with pytest.raises(ValueError, match="Metadata config must be a mapping"):
+        with pytest.raises(ValueError, match="Metadata key 'config' must be a mapping"):
             _TestResults.load(str(path))
 
     def test_load_rejects_non_list_conditions(self, tmp_path):
@@ -396,7 +396,7 @@ class TestTestResultsSaveLoad:
         with open(tmp_path / "results.meta.json", "w") as f:
             json.dump({"config": original.config.to_dict(), "cond_1": "bad", "cond_2": ["sample_03"]}, f)
 
-        with pytest.raises(ValueError, match="cond_1 and cond_2 must be lists"):
+        with pytest.raises(ValueError, match="Metadata keys 'cond_1' and 'cond_2' must be lists"):
             _TestResults.load(str(path))
 
     def test_load_rejects_main_file_missing_required_columns(self, tmp_path):
@@ -522,7 +522,7 @@ class TestPowerResultsSaveLoad:
         with open(tmp_path / "power.meta.json", "w") as f:
             json.dump({"config": "bad"}, f)
 
-        with pytest.raises(ValueError, match="Metadata config must be a mapping"):
+        with pytest.raises(ValueError, match="Metadata key 'config' must be a mapping"):
             PowerResults.load(str(path))
 
     def test_load_rejects_main_file_missing_required_columns(self, tmp_path):
