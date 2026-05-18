@@ -126,6 +126,19 @@ class TestValidatePolars:
         with pytest.raises(ValueError, match="cv_thr must be"):
             validate_and_extract(df, ["s0", "s1", "s2"], ["s3", "s4", "s5"], cv_thr=-0.1)
 
+    def test_non_numeric_intensity_column_raises_clear_error(self):
+        df = pl.DataFrame(
+            {
+                "s0": [1.0, 2.0],
+                "s1": ["bad", "worse"],
+                "s2": [3.0, 4.0],
+                "s3": [5.0, 6.0],
+                "feature_id": ["f1", "f2"],
+            }
+        )
+        with pytest.raises(ValueError, match="must reference only numeric DataFrame columns"):
+            validate_and_extract(df, ["s0", "s1"], ["s2", "s3"], cv_thr=0.15)
+
     def test_invalid_input_type(self):
         with pytest.raises(TypeError, match="Parameter 'data'"):
             validate_and_extract("invalid", [0, 1], [2, 3], cv_thr=0.15)

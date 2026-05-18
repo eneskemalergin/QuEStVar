@@ -153,7 +153,7 @@ class TestQuestVar:
         }
         assert all(isinstance(value, _TestResults) for value in results.values())
 
-    def test_all_features_failing_cv_filter_raises(self):
+    def test_all_features_failing_cv_filter_returns_empty_results(self):
         data = np.array(
             [
                 [1.0, 100.0, 1.0, 100.0],
@@ -163,10 +163,32 @@ class TestQuestVar:
             dtype=np.float64,
         )
         qv = QuestVar(cv_thr=0.1)
-        import pytest
+        result = qv.test(data, cond_1=[0, 1], cond_2=[2, 3])
 
-        with pytest.raises(ValueError, match="No features passed the CV filter"):
-            qv.test(data, cond_1=[0, 1], cond_2=[2, 3])
+        assert isinstance(result, _TestResults)
+        assert result.data.height == 0
+        assert result.data.columns == [
+            "feature_id",
+            "n1",
+            "n2",
+            "log2fc",
+            "average",
+            "df_p",
+            "df_adjp",
+            "eq_p",
+            "eq_adjp",
+            "comb_p",
+            "comb_adjp",
+            "log10_pval",
+            "log10_adj_pval",
+            "status",
+        ]
+        assert result.info.height == 3
+        assert result.info["status"].null_count() == 0
+        assert result.info["status"].is_nan().all()
+        summary = result.summary()
+        assert "Tested:              0" in summary
+        assert "No features passed the CV filter" in summary
 
     def test_is_log2_false_matches_manual_log2_pipeline(self):
         rng = np.random.default_rng(42)
@@ -293,6 +315,22 @@ class TestValidateExtract:
 
         with pytest.raises(ValueError, match="Parameter 'cv_thr' must be > 0"):
             qv.test(data, cond_1=[0, 1, 2], cond_2=[3, 4, 5], cv_thr=0.0)
+
+    def test_non_numeric_dataframe_column_raises_clear_error(self):
+        df = pl.DataFrame(
+            {
+                "sample_00": [1.0, 2.0],
+                "sample_01": ["bad", "worse"],
+                "sample_02": [3.0, 4.0],
+                "sample_03": [5.0, 6.0],
+                "feature_id": ["feat_001", "feat_002"],
+            }
+        )
+        qv = QuestVar()
+        import pytest
+
+        with pytest.raises(ValueError, match="must reference only numeric DataFrame columns"):
+            qv.test(df, cond_1=["sample_00", "sample_01"], cond_2=["sample_02", "sample_03"])
 
 
 class TestTestResultsSaveLoad:

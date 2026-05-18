@@ -152,6 +152,18 @@ def _from_polars(
     if cv_thr <= 0:
         raise ValueError(f"cv_thr must be > 0, got {cv_thr}")
 
+    schema = data.schema
+    non_numeric_columns = [
+        f"{column!r} ({schema[column]})"
+        for column in cond_1 + cond_2
+        if not schema[column].is_numeric()
+    ]
+    if non_numeric_columns:
+        raise ValueError(
+            "Parameters 'cond_1'/'cond_2' must reference only numeric DataFrame columns, "
+            f"got non-numeric columns: {', '.join(non_numeric_columns)}."
+        )
+
     intensity_cols = set(cond_1) | set(cond_2)
     id_col: str | None = None
     for candidate in ("feature_id", "protein_id"):

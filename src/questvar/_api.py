@@ -130,6 +130,27 @@ _POWER_RESULTS_DESIGN_GRID_COLUMNS = (
 )
 
 
+def _empty_test_results_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "feature_id": pl.Series("feature_id", [], dtype=pl.String),
+            "n1": pl.Series("n1", [], dtype=pl.Float64),
+            "n2": pl.Series("n2", [], dtype=pl.Float64),
+            "log2fc": pl.Series("log2fc", [], dtype=pl.Float64),
+            "average": pl.Series("average", [], dtype=pl.Float64),
+            "df_p": pl.Series("df_p", [], dtype=pl.Float64),
+            "df_adjp": pl.Series("df_adjp", [], dtype=pl.Float64),
+            "eq_p": pl.Series("eq_p", [], dtype=pl.Float64),
+            "eq_adjp": pl.Series("eq_adjp", [], dtype=pl.Float64),
+            "comb_p": pl.Series("comb_p", [], dtype=pl.Float64),
+            "comb_adjp": pl.Series("comb_adjp", [], dtype=pl.Float64),
+            "log10_pval": pl.Series("log10_pval", [], dtype=pl.Float64),
+            "log10_adj_pval": pl.Series("log10_adj_pval", [], dtype=pl.Float64),
+            "status": pl.Series("status", [], dtype=pl.Int8),
+        }
+    )
+
+
 class QuestVar:
     """Configurable QuEStVar analysis object.
 
@@ -183,10 +204,23 @@ class QuestVar:
         s2_ps = make_selection_indicator(s2_cv, config.cv_thr)
         keep = (s1_ps > 0) & (s2_ps > 0)
 
+        status_all = np.full(s1_arr.shape[0], np.nan)
+        info_df = pl.DataFrame(
+            {
+                "feature_id": pl.Series("feature_id", protein_ids),
+                "s1_cv_status": s1_ps,
+                "s2_cv_status": s2_ps,
+                "status": status_all,
+            }
+        )
+
         if not keep.any():
-            raise ValueError(
-                "No features passed the CV filter with parameters "
-                f"cv_thr={config.cv_thr}, cond_1={c1}, cond_2={c2}."
+            return TestResults(
+                data=_empty_test_results_frame(),
+                config=config,
+                cond_1=c1,
+                cond_2=c2,
+                info=info_df,
             )
 
         s1_ready = s1_arr[keep]
@@ -234,16 +268,7 @@ class QuestVar:
         result_dict["status"] = pl.Series("status", result_arr[:, COL_STATUS].astype(np.int8))
         results_df = pl.DataFrame(result_dict)
 
-        status_all = np.full(s1_arr.shape[0], np.nan)
         status_all[keep] = result_arr[:, COL_STATUS]
-        info_df = pl.DataFrame(
-            {
-                "feature_id": pl.Series("feature_id", protein_ids),
-                "s1_cv_status": s1_ps,
-                "s2_cv_status": s2_ps,
-                "status": status_all,
-            }
-        )
 
         return TestResults(
             data=results_df,
@@ -410,6 +435,8 @@ class TestResults:
             f"  Thresholds:  eq={cfg.eq_thr}  df={cfg.df_thr}  cv={cfg.cv_thr}  p={cfg.p_thr}",
             f"  Correction:  {cfg.correction}",
         ]
+        if tested == 0:
+            lines.append("  Note: No features passed the CV filter. No statistical tests were run.")
         return "\n".join(lines)
 
 
