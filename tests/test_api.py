@@ -332,6 +332,44 @@ class TestValidateExtract:
         with pytest.raises(ValueError, match="must reference only numeric DataFrame columns"):
             qv.test(df, cond_1=["sample_00", "sample_01"], cond_2=["sample_02", "sample_03"])
 
+    def test_all_nan_replicate_column_raises_clear_error(self):
+        df = pl.DataFrame(
+            {
+                "sample_00": [1.0, 2.0],
+                "sample_01": [2.0, 3.0],
+                "sample_02": [None, None],
+                "sample_03": [None, None],
+            }
+        )
+        qv = QuestVar(cv_thr=10.0)
+        import pytest
+
+        with pytest.raises(ValueError, match="only missing values"):
+            qv.test(df, cond_1=["sample_00", "sample_01"], cond_2=["sample_02", "sample_03"])
+
+    def test_paired_replicate_count_mismatch_raises_clear_error(self):
+        data = np.arange(15, dtype=np.float64).reshape(3, 5)
+        qv = QuestVar(is_paired=True)
+        import pytest
+
+        with pytest.raises(ValueError, match="Paired analysis requires the same number of replicate columns"):
+            qv.test(data, cond_1=[0, 1], cond_2=[2, 3, 4])
+
+    def test_allow_missing_paired_asymmetric_nan_patterns_raise_clear_error(self):
+        data = np.array(
+            [
+                [1.0, np.nan, 3.0, 1.5, 2.5, 3.5],
+                [1.0, 2.0, 3.0, 1.2, np.nan, 3.2],
+            ],
+            dtype=np.float64,
+        )
+        qv = QuestVar(is_paired=True, allow_missing=True, cv_thr=10.0, correction=None)
+        import pytest
+
+        with pytest.raises(ValueError, match="matching missing-value patterns"):
+            qv.test(data, cond_1=[0, 1, 2], cond_2=[3, 4, 5])
+
+
 
 class TestTestResultsSaveLoad:
     def test_save_load_parquet_roundtrip(self, tmp_path):

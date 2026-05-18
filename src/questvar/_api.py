@@ -190,6 +190,7 @@ class QuestVar:
             cond_1,
             cond_2,
             config.cv_thr,
+            is_paired=config.is_paired,
         )
 
         s1_cv = cv_numpy(

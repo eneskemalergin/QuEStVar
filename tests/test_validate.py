@@ -109,12 +109,24 @@ class TestValidatePolars:
             pl.Series("na2", nan_arr).fill_nan(None),
             pl.Series("na3", nan_arr).fill_nan(None),
         ])
-        # All-NaN rows pass validation; the CV filter in _api.py excludes them.
-        s1, s2, pids, c1, c2, meta = validate_and_extract(
-            df, ["s0", "s1", "s2"], ["na1", "na2", "na3"], cv_thr=0.15
+        with pytest.raises(ValueError, match="only missing values|only NaN values"):
+            validate_and_extract(df, ["s0", "s1", "s2"], ["na1", "na2", "na3"], cv_thr=0.15)
+
+    def test_numpy_all_nan_replicate_raises_clear_error(self):
+        arr = np.array(
+            [
+                [1.0, 2.0, np.nan, np.nan],
+                [3.0, 4.0, np.nan, np.nan],
+            ],
+            dtype=np.float64,
         )
-        assert s2.shape == (50, 3)
-        assert np.all(np.isnan(s2))
+        with pytest.raises(ValueError, match="Parameter 'cond_2' contains replicate columns with only NaN values"):
+            validate_and_extract(arr, [0, 1], [2, 3], cv_thr=0.15)
+
+    def test_paired_selector_length_mismatch_raises_clear_error(self):
+        arr = np.arange(15, dtype=np.float64).reshape(3, 5)
+        with pytest.raises(ValueError, match="Paired analysis requires the same number of replicate columns"):
+            validate_and_extract(arr, [0, 1], [2, 3, 4], cv_thr=0.15, is_paired=True)
 
     def test_cv_thr_zero(self):
         df = _make_proteomics_df(50, 3)

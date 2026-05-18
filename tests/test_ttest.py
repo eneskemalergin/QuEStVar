@@ -201,6 +201,30 @@ class TestRunPaired:
         assert result.shape == (1, 17)
         assert result[0, COL_STATUS] in (-1, 0, 1)
 
+    def test_asymmetric_missingness_raises_clear_error(self):
+        s1 = np.array([[1.0, np.nan, 3.0]], dtype=np.float64)
+        s2 = np.array([[1.5, 2.5, 3.5]], dtype=np.float64)
+
+        with pytest.raises(ValueError, match="matching missing-value patterns"):
+            run_paired(s1, s2, correction=None)
+
+    def test_too_few_complete_pairs_raises_clear_error(self):
+        s1 = np.array([[1.0, np.nan, np.nan]], dtype=np.float64)
+        s2 = np.array([[1.5, np.nan, np.nan]], dtype=np.float64)
+
+        with pytest.raises(ValueError, match="at least 2 complete replicate pairs"):
+            run_paired(s1, s2, correction=None)
+
+    def test_symmetric_missingness_with_two_complete_pairs_is_allowed(self):
+        s1 = np.array([[1.0, np.nan, 3.0, 4.0]], dtype=np.float64)
+        s2 = np.array([[1.5, np.nan, 3.5, 4.5]], dtype=np.float64)
+
+        result = run_paired(s1, s2, correction=None)
+
+        assert result.shape == (1, 17)
+        assert result[0, 0] == 3.0
+        assert result[0, 1] == 3.0
+
     def test_exact_boundaries_are_strict_for_paired_status(self):
         s1 = np.full((2, 4), 10.0, dtype=np.float64)
         s2 = np.array(

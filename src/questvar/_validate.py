@@ -14,6 +14,8 @@ def validate_and_extract(
     cond_1: list[str] | list[int],
     cond_2: list[str] | list[int],
     cv_thr: float = 0.15,
+    *,
+    is_paired: bool = False,
 ) -> tuple[
     NDArray[np.float64], NDArray[np.float64], np.ndarray,
     list[Any], list[Any], dict[str, Any],
@@ -43,7 +45,7 @@ def validate_and_extract(
         Extra metadata (empty for now, reserved for future use).
     """
     if isinstance(data, np.ndarray):
-        return _from_array(data, cond_1, cond_2, cv_thr)
+        return _from_array(data, cond_1, cond_2, cv_thr, is_paired=is_paired)
 
     try:
         import polars as pl
@@ -51,7 +53,7 @@ def validate_and_extract(
         raise ImportError("Polars is required for DataFrame input") from None
 
     if isinstance(data, pl.DataFrame):
-        return _from_polars(data, cond_1, cond_2, cv_thr)
+        return _from_polars(data, cond_1, cond_2, cv_thr, is_paired=is_paired)
 
     raise TypeError(
         "Parameter 'data' must be a polars.DataFrame or numpy.ndarray, "
@@ -64,6 +66,8 @@ def _from_array(
     cond_1: list[int] | list[str],
     cond_2: list[int] | list[str],
     cv_thr: float,
+    *,
+    is_paired: bool,
 ) -> tuple[
     NDArray[np.float64], NDArray[np.float64], np.ndarray,
     list[Any], list[Any], dict[str, Any],
@@ -92,6 +96,11 @@ def _from_array(
         raise ValueError(
             f"Parameter 'cond_2' must contain at least 2 replicate indices, got {len(idx2)}: {idx2}."
         )
+    if is_paired and len(idx1) != len(idx2):
+        raise ValueError(
+            "Paired analysis requires the same number of replicate columns in "
+            f"'cond_1' and 'cond_2', got len(cond_1)={len(idx1)} and len(cond_2)={len(idx2)}."
+        )
 
     max_index = max(idx1 + idx2)
     if max_index >= arr.shape[1]:
@@ -105,6 +114,8 @@ def _from_array(
 
     s1 = arr[:, idx1].copy()
     s2 = arr[:, idx2].copy()
+    _raise_if_all_nan_replicates(s1, idx1, parameter_name="cond_1")
+    _raise_if_all_nan_replicates(s2, idx2, parameter_name="cond_2")
 
     protein_ids = np.arange(arr.shape[0], dtype=np.int64)
     return s1, s2, protein_ids, list(cond_1), list(cond_2), {}
@@ -115,6 +126,8 @@ def _from_polars(
     cond_1: list[str] | list[int],
     cond_2: list[str] | list[int],
     cv_thr: float,
+    *,
+    is_paired: bool,
 ) -> tuple[
     NDArray[np.float64], NDArray[np.float64], np.ndarray,
     list[Any], list[Any], dict[str, Any],
@@ -148,9 +161,25 @@ def _from_polars(
         raise ValueError(
             f"Parameter 'cond_2' must contain at least 2 replicate columns, got {len(cond_2)}: {cond_2}."
         )
+    if is_paired and len(cond_1) != len(cond_2):
+        raise ValueError(
+            "Paired analysis requires the same number of replicate columns in "
+            f"'cond_1' and 'cond_2', got len(cond_1)={len(cond_1)} and len(cond_2)={len(cond_2)}."
+        )
 
     if cv_thr <= 0:
         raise ValueError(f"cv_thr must be > 0, got {cv_thr}")
+
+    all_null_columns = [
+        repr(column)
+        for column in cond_1 + cond_2
+        if data.get_column(column).null_count() == data.height
+    ]
+    if all_null_columns:
+        raise ValueError(
+            "Parameters 'cond_1'/'cond_2' contain replicate columns with only missing values: "
+            f"{', '.join(all_null_columns)}."
+        )
 
     schema = data.schema
     non_numeric_columns = [
@@ -179,5 +208,21 @@ def _from_polars(
         feature_ids = np.arange(data.shape[0], dtype=np.int64)
     s1_arr = data.select(cond_1).to_numpy().astype(np.float64)
     s2_arr = data.select(cond_2).to_numpy().astype(np.float64)
+    _raise_if_all_nan_replicates(s1_arr, cond_1, parameter_name="cond_1")
+    _raise_if_all_nan_replicates(s2_arr, cond_2, parameter_name="cond_2")
 
     return s1_arr, s2_arr, feature_ids, list(cond_1), list(cond_2), {}
+
+
+def _raise_if_all_nan_replicates(
+    arr: NDArray[np.float64],
+    labels: list[Any],
+    *,
+    parameter_name: str,
+) -> None:
+    all_nan_mask = np.isnan(arr).all(axis=0)
+    if np.any(all_nan_mask):
+        bad_labels = [repr(labels[idx]) for idx, is_bad in enumerate(all_nan_mask) if is_bad]
+        raise ValueError(
+            f"Parameter '{parameter_name}' contains replicate columns with only NaN values: {', '.join(bad_labels)}."
+        )

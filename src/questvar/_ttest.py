@@ -98,6 +98,7 @@ def ttest_rel(
         raise ValueError(
             f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}"
         )
+    _validate_paired_observations(s1, s2)
     d = s1 - s2
     n = np.sum(~np.isnan(d), axis=1).astype(np.float64)
     mean = np.nanmean(d, axis=1)
@@ -240,6 +241,14 @@ def run_paired(
 ) -> NDArray[np.float64]:
     from questvar._correction import p_adjust
 
+    s1 = np.asarray(s1, dtype=np.float64)
+    s2 = np.asarray(s2, dtype=np.float64)
+    if s1.shape != s2.shape:
+        raise ValueError(
+            f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}"
+        )
+    _validate_paired_observations(s1, s2)
+
     d = s1 - s2
     n = np.sum(~np.isnan(d), axis=1).astype(np.float64)
     log2fc = np.nanmean(d, axis=1)
@@ -300,3 +309,25 @@ def _log10_safe(p: NDArray[np.float64]) -> NDArray[np.float64]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         return np.where(p > 0, np.log10(p), np.nan)
+
+
+def _validate_paired_observations(
+    s1: NDArray[np.float64],
+    s2: NDArray[np.float64],
+) -> None:
+    s1_missing = np.isnan(s1)
+    s2_missing = np.isnan(s2)
+    asymmetric_rows = np.any(s1_missing != s2_missing, axis=1)
+    if np.any(asymmetric_rows):
+        raise ValueError(
+            "Paired inputs must have matching missing-value patterns across replicates for each feature, "
+            f"but found asymmetric missingness in {int(np.sum(asymmetric_rows))} feature row(s)."
+        )
+
+    complete_pairs = np.sum(~s1_missing, axis=1)
+    too_few_pairs = complete_pairs < 2
+    if np.any(too_few_pairs):
+        raise ValueError(
+            "Paired inputs must contain at least 2 complete replicate pairs per feature, "
+            f"but found {int(np.sum(too_few_pairs))} feature row(s) with fewer than 2 complete pairs."
+        )
