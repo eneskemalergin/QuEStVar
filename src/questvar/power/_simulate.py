@@ -14,10 +14,16 @@ def simulate_data(
     cv_k: float = 2.0,
     cv_theta: float = 0.5,
     seed: int | None = None,
+    delta: float = 0.0,
 ) -> NDArray[np.float64]:
     """Simulate log-normal proteomics data.
 
     cv_mu is the target mean CV as a **ratio** (e.g. 0.275 for 27.5%).
+
+    delta is the true log2 fold-change applied to the second condition
+    (columns n_reps // 2 onward). A value of 0.0 (default) simulates
+    pure-equivalence data where both conditions share the same mean.
+    Positive delta shifts condition 2 upward in log2 space.
     """
     rng = np.random.default_rng(seed)
 
@@ -37,4 +43,8 @@ def simulate_data(
     mu_ln = np.log(mean_dist**2 / np.sqrt(sd_dist**2 + mean_dist**2))
     sigma_ln = np.sqrt(np.log1p(cv_dist**2))
     data = rng.lognormal(mu_ln, sigma_ln, (n_prts, n_reps))
+    if delta != 0.0:
+        # Shift condition 2 by delta in log2 space: multiply intensities by 2^delta.
+        n_half = n_reps // 2
+        data[:, n_half:] *= 2.0 ** delta
     return data.astype(np.float64)

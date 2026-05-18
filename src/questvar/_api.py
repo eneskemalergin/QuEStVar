@@ -381,6 +381,50 @@ class PowerResults:
                 return row
         return None
 
+    def design_table(
+        self,
+        row_axis: str = "eq_thr",
+        col_axis: str = "n_reps",
+        metric: str = "power",
+    ) -> pl.DataFrame:
+        """Return a pivot table of the metric across two design axes.
+
+        Looks for cross-product rows (parameter == "{row_axis}_{col_axis}") first.
+        Falls back to all design grid rows when no joint rows exist.
+
+        Parameters
+        ----------
+        row_axis : str
+            Design variable for the pivot row index (e.g. "eq_thr", "cv_mean").
+        col_axis : str
+            Design variable for the pivot column headers (e.g. "n_reps", "cv_thr").
+        metric : str
+            Numeric column to display in cells (e.g. "power", "sei_mean").
+
+        Returns
+        -------
+        pl.DataFrame
+            Pivot table with row_axis values as index and col_axis values as columns.
+        """
+        joint_param = f"{row_axis}_{col_axis}"
+        rows = [r for r in self.design_grid if r["parameter"] == joint_param]
+        if not rows:
+            rows = self.design_grid
+        if not rows:
+            return pl.DataFrame()
+        try:
+            df = pl.DataFrame(
+                [
+                    {row_axis: r[row_axis], col_axis: r[col_axis], metric: float(r[metric])}
+                    for r in rows
+                ]
+            )
+            return df.pivot(index=row_axis, on=col_axis, values=metric, aggregate_function="mean")
+        except Exception:
+            return pl.DataFrame(
+                [{row_axis: r[row_axis], col_axis: r[col_axis], metric: r.get(metric)} for r in rows]
+            )
+
     def compare(self, other: PowerResults | dict[str, Any], level: str = "design_grid") -> list[dict[str, Any]]:
         if hasattr(other, "to_dict"):
             other_payload = other.to_dict()

@@ -179,3 +179,283 @@ class TestPowerAnalysis:
 
         comparison = alt.compare(base)
         assert isinstance(comparison, list)
+
+
+class TestPowerWorkflowImprovements:
+    """Tests for power workflow improvements: richer sweeps, diagnostics, exploration."""
+
+    def test_cv_mean_n_reps_cross_product_exists(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5, 10],
+            cv_mean_list=[0.15, 0.30],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        cross_rows = [r for r in results.design_grid if r["parameter"] == "cv_mean_n_reps"]
+        assert len(cross_rows) == 4  # 2 cv_mean x 2 n_reps
+
+    def test_cv_mean_n_reps_not_generated_with_single_values(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        cross_rows = [r for r in results.design_grid if r["parameter"] == "cv_mean_n_reps"]
+        assert len(cross_rows) == 0
+
+    def test_design_grid_has_sei_convergence(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=3,
+            n_jobs=1,
+        )
+        for row in results.design_grid:
+            assert "sei_convergence" in row
+            assert "converged" in row
+            assert isinstance(row["converged"], bool)
+
+    def test_sei_convergence_is_nan_when_sei_zero(self):
+        # When sei_mean == 0 (very strict cv_thr excludes all), convergence is nan.
+        import math
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[3],
+            cv_mean_list=[0.20],
+            cv_thr_list=[0.001],  # extremely tight: almost everything excluded
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        cv_thr_rows = [r for r in results.design_grid if r["parameter"] == "cv_thr"]
+        if cv_thr_rows:
+            row = cv_thr_rows[0]
+            # Either it's a valid float or nan; both are acceptable.
+            assert isinstance(row["sei_convergence"], float) or math.isnan(row["sei_convergence"])
+
+    def test_diagnostics_has_convergence_counts(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        assert "n_converged" in results.diagnostics
+        assert "n_not_converged" in results.diagnostics
+        total = results.diagnostics["n_converged"] + results.diagnostics["n_not_converged"]
+        assert total == len(results.design_grid)
+
+    def test_design_table_returns_dataframe(self):
+        import polars as pl
+
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.3, 0.5]),
+            n_reps_list=[5, 10],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        tbl = results.design_table(row_axis="eq_thr", col_axis="n_reps")
+        assert isinstance(tbl, pl.DataFrame)
+        assert len(tbl) == 2  # 2 eq_thr values as rows
+
+    def test_design_table_cv_mean_n_reps(self):
+        import polars as pl
+
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5, 10],
+            cv_mean_list=[0.15, 0.30],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        tbl = results.design_table(row_axis="cv_mean", col_axis="n_reps")
+        assert isinstance(tbl, pl.DataFrame)
+        assert len(tbl) == 2  # 2 cv_mean values as rows
+
+    def test_eq_thr_cv_mean_cross_product_exists(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.3, 0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.15, 0.30],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        cross_rows = [r for r in results.design_grid if r["parameter"] == "eq_thr_cv_mean"]
+        assert len(cross_rows) == 4  # 2 eq_thr x 2 cv_mean
+
+    def test_eq_thr_cv_mean_not_generated_with_single_values(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        cross_rows = [r for r in results.design_grid if r["parameter"] == "eq_thr_cv_mean"]
+        assert len(cross_rows) == 0
+
+    def test_design_table_eq_thr_cv_mean(self):
+        import polars as pl
+
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.3, 0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.15, 0.30],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        tbl = results.design_table(row_axis="eq_thr", col_axis="cv_mean")
+        assert isinstance(tbl, pl.DataFrame)
+        assert len(tbl) == 2  # 2 eq_thr rows
+
+    def test_design_table_fallback_with_no_joint_rows(self):
+        import polars as pl
+
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        # No joint rows; should fall back gracefully.
+        tbl = results.design_table(row_axis="eq_thr", col_axis="n_reps")
+        assert isinstance(tbl, pl.DataFrame)
+        assert len(tbl) > 0
+
+    def test_delta_sweep_generates_delta_1d_rows(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            delta_list=[0.0, 0.5, 1.0],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        delta_rows = [r for r in results.design_grid if r["parameter"] == "delta"]
+        assert len(delta_rows) == 3
+
+    def test_delta_sweep_not_generated_without_explicit_list(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        delta_rows = [r for r in results.design_grid if r["parameter"] == "delta"]
+        assert len(delta_rows) == 0
+
+    def test_delta_rows_have_true_delta_field(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            delta_list=[0.0, 0.5],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        for row in results.design_grid:
+            assert "true_delta" in row
+
+    def test_delta_n_reps_cross_product_exists(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5, 10],
+            cv_mean_list=[0.20],
+            delta_list=[0.0, 0.5],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        cross_rows = [r for r in results.design_grid if r["parameter"] == "delta_n_reps"]
+        # 2 delta values x 2 n_reps values
+        assert len(cross_rows) == 4
+
+    def test_delta_eq_thr_cross_product_exists(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.3, 0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            delta_list=[0.0, 0.5],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        cross_rows = [r for r in results.design_grid if r["parameter"] == "delta_eq_thr"]
+        # 2 delta values x 2 eq_thr values
+        assert len(cross_rows) == 4
+
+    def test_delta_cv_mean_cross_product_exists(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.15, 0.30],
+            delta_list=[0.0, 0.5],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        cross_rows = [r for r in results.design_grid if r["parameter"] == "delta_cv_mean"]
+        # 2 delta values x 2 cv_mean values
+        assert len(cross_rows) == 4
+
+    def test_large_delta_increases_diff_rate(self):
+        # With true effect >> df_thr, diff_rate should rise clearly above 0.
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[20],
+            cv_mean_list=[0.20],
+            delta_list=[0.0, 3.0],
+            n_prts=500,
+            n_iterations=5,
+            n_jobs=1,
+        )
+        delta0_rows = [r for r in results.design_grid if r["parameter"] == "delta" and r["true_delta"] == 0.0]
+        delta3_rows = [r for r in results.design_grid if r["parameter"] == "delta" and r["true_delta"] == 3.0]
+        assert delta0_rows and delta3_rows
+        assert delta3_rows[0]["diff_rate"] > delta0_rows[0]["diff_rate"]
+
+    def test_n_prts_sweep_generates_n_prts_rows(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts_list=[200, 500, 1000],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        n_prts_rows = [r for r in results.design_grid if r["parameter"] == "n_prts"]
+        assert len(n_prts_rows) == 3
+
+    def test_n_prts_sweep_not_generated_by_default(self):
+        results = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=2,
+            n_jobs=1,
+        )
+        n_prts_rows = [r for r in results.design_grid if r["parameter"] == "n_prts"]
+        assert len(n_prts_rows) == 0

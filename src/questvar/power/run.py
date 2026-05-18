@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from questvar._api import QuestVar
 from questvar._config import PowerConfig
+from questvar._cv import cv_numpy, make_selection_indicator
+from questvar._ttest import COL_STATUS, run_unpaired
 from questvar.power._simulate import simulate_data
 
 if TYPE_CHECKING:
@@ -20,6 +21,8 @@ def run_power_analysis(
     n_reps_list: list[int] | None = None,
     cv_mean_list: list[float] | None = None,
     cv_thr_list: list[float] | None = None,
+    delta_list: list[float] | None = None,
+    n_prts_list: list[int] | None = None,
     random_seed: int | None = None,
     n_prts: int = 10000,
     n_iterations: int = 10,
@@ -40,6 +43,7 @@ def run_power_analysis(
         n_reps=n_reps_list[0] if n_reps_list else 5,
         cv_mean=cv_mean_list[0] if cv_mean_list else 0.20,
         eq_thr=float(eq_boundaries[0]) if eq_boundaries is not None else 0.5,
+        delta=float(delta_list[0]) if delta_list else 0.0,
         p_thr=p_thr,
         df_thr=df_thr,
         cv_thr=cv_thr,
@@ -49,7 +53,9 @@ def run_power_analysis(
         target_power=target_power,
         eq_boundaries=tuple(eq_boundaries) if eq_boundaries is not None else (0.1, 0.3, 0.5, 0.7, 0.9),
         n_reps_grid=tuple(n_reps_list) if n_reps_list is not None else (3, 5, 10, 20),
+        n_prts_grid=tuple(n_prts_list) if n_prts_list is not None else (),
         cv_mean_grid=tuple(cv_mean_list) if cv_mean_list is not None else (0.10, 0.20, 0.30),
+        delta_grid=tuple(delta_list) if delta_list is not None else (0.0,),
         cv_thr_grid=tuple(cv_thr_list) if cv_thr_list is not None else (cv_thr,),
         random_seed=random_seed,
         int_mu=int_mu,
@@ -91,6 +97,8 @@ def run_power_analysis(
         ),
         "base_random_seed": config.random_seed,
         "monotonicity_checks": monotonicity_checks,
+        "n_converged": sum(1 for r in design_grid if r.get("converged", False)),
+        "n_not_converged": sum(1 for r in design_grid if not r.get("converged", False)),
         "runtime_seconds": time.perf_counter() - start,
     }
 
@@ -107,38 +115,67 @@ def run_power_analysis(
     )
 
 
+def _run_iteration_fast(
+    data: np.ndarray,
+    n_reps: int,
+    n_prts: int,
+    cv_thr: float,
+    eq_thr: float,
+    df_thr: float,
+    p_thr: float,
+    correction: str | None,
+) -> np.ndarray:
+    """Run one MC iteration directly against the core engine.
+
+    Bypasses the public API validation layer and Polars DataFrame construction
+    overhead that would otherwise be incurred on every simulation call.
+    Returns a float64 status array of length n_prts with NaN for excluded features.
+    """
+    s1 = data[:, :n_reps]
+    s2 = data[:, n_reps : 2 * n_reps]
+
+    s1_cv = cv_numpy(s1)
+    s2_cv = cv_numpy(s2)
+    keep = (make_selection_indicator(s1_cv, cv_thr) > 0) & (make_selection_indicator(s2_cv, cv_thr) > 0)
+
+    status_full = np.full(n_prts, np.nan, dtype=np.float64)
+    if not keep.any():
+        return status_full
+
+    s1_log = np.log2(np.maximum(s1[keep], 1e-300))
+    s2_log = np.log2(np.maximum(s2[keep], 1e-300))
+    result_arr = run_unpaired(s1_log, s2_log, eq_thr=eq_thr, df_thr=df_thr, p_thr=p_thr, correction=correction)
+    status_full[keep] = result_arr[:, COL_STATUS].astype(np.float64)
+    return status_full
+
+
 def _simulate_design_point(args: tuple) -> list[dict]:
     """Run all MC iterations for one design point. Returns per-iteration metrics.
 
-    Batching all iterations here means QuestVar and PowerConfig are constructed
-    once per design point rather than once per iteration, and the multiprocessing
-    pool carries one task per design point instead of one per (design_point, iteration).
+    Batching all iterations here means PowerConfig is constructed once per design
+    point and the multiprocessing pool carries one task per design point instead
+    of one per (design_point, iteration).
     """
 
     point, config_dict = args
     cfg = PowerConfig.from_dict(config_dict)
     n_reps = int(point["n_reps"])
 
-    qv = QuestVar(
-        cv_thr=float(point["cv_thr"]),
-        p_thr=cfg.p_thr,
-        df_thr=cfg.df_thr,
-        eq_thr=float(point["eq_thr"]),
-        correction=cfg.correction,
-        is_log2=False,
-        is_paired=False,
-    )
-    cond_1 = list(range(n_reps))
-    cond_2 = list(range(n_reps, 2 * n_reps))
+    # Parameters extracted once per design point.
+    cv_thr = float(point["cv_thr"])
+    eq_thr = float(point["eq_thr"])
+    delta = float(point.get("delta", 0.0))
+    # n_prts may vary when sweeping feature count; fall back to config default.
+    n_prts = int(point.get("n_prts", cfg.n_prts))
 
-    # All proteins are truly equivalent in pure-equivalence analysis.
-    n_equivalent_true = cfg.n_prts
+    # Features with true delta < eq_thr are within the equivalence zone.
+    n_equivalent_true = n_prts if delta < eq_thr else 0
 
     metrics: list[dict] = []
     for run_id in range(cfg.n_iterations):
         seed = run_id if cfg.random_seed is None else cfg.random_seed + run_id
         data = simulate_data(
-            n_prts=cfg.n_prts,
+            n_prts=n_prts,
             n_reps=n_reps * 2,
             int_mu=cfg.int_mu,
             int_sd=cfg.int_sd,
@@ -146,17 +183,21 @@ def _simulate_design_point(args: tuple) -> list[dict]:
             cv_k=cfg.cv_k,
             cv_theta=cfg.cv_theta,
             seed=seed,
+            delta=delta,
         )
 
-        try:
-            result = qv.test(data, cond_1=cond_1, cond_2=cond_2)
-            status_full = result.info["status"].to_numpy()
-        except ValueError as exc:
-            if "No proteins passed CV filter" not in str(exc):
-                raise
-            status_full = np.full(cfg.n_prts, np.nan, dtype=np.float64)
+        status_full = _run_iteration_fast(
+            data,
+            n_reps=n_reps,
+            n_prts=n_prts,
+            cv_thr=cv_thr,
+            eq_thr=eq_thr,
+            df_thr=cfg.df_thr,
+            p_thr=cfg.p_thr,
+            correction=cfg.correction,
+        )
 
-        n_total = cfg.n_prts
+        n_total = n_prts
         n_tested = int(np.sum(~np.isnan(status_full)))
         n_equiv = int(np.sum(status_full == 1))
         n_diff = int(np.sum(status_full == -1))
@@ -182,6 +223,7 @@ def _simulate_design_point(args: tuple) -> list[dict]:
                 "df_thr": cfg.df_thr,
                 "cv_thr": float(point["cv_thr"]),
                 "cv_mean": float(point["cv_mean"]),
+                "true_delta": delta,
                 "target_sei": cfg.target_sei,
                 "target_power": cfg.target_power,
                 "n_iterations": cfg.n_iterations,
@@ -205,15 +247,19 @@ def _build_design_points(
     cv_thr_list: list[float],
 ) -> list[dict[str, float | int | str]]:
     design_points: list[dict[str, float | int | str]] = []
+    # Whether delta is being swept (more than just the default 0.0 baseline).
+    _has_delta_sweep = len(config.delta_grid) > 1 or any(d != 0.0 for d in config.delta_grid)
     for eq_thr in config.eq_boundaries:
         design_points.append(
             {
                 "parameter": "eq_thr",
                 "value": eq_thr,
                 "n_reps": config.n_reps,
+                "n_prts": config.n_prts,
                 "eq_thr": eq_thr,
                 "cv_mean": config.cv_mean,
                 "cv_thr": config.cv_thr,
+                "delta": config.delta,
             }
         )
     for n_reps in config.n_reps_grid:
@@ -222,9 +268,11 @@ def _build_design_points(
                 "parameter": "n_reps",
                 "value": n_reps,
                 "n_reps": n_reps,
+                "n_prts": config.n_prts,
                 "eq_thr": config.eq_thr,
                 "cv_mean": config.cv_mean,
                 "cv_thr": config.cv_thr,
+                "delta": config.delta,
             }
         )
     for cv_mean in config.cv_mean_grid:
@@ -233,9 +281,11 @@ def _build_design_points(
                 "parameter": "cv_mean",
                 "value": cv_mean,
                 "n_reps": config.n_reps,
+                "n_prts": config.n_prts,
                 "eq_thr": config.eq_thr,
                 "cv_mean": cv_mean,
                 "cv_thr": config.cv_thr,
+                "delta": config.delta,
             }
         )
     for cv_thr_value in cv_thr_list:
@@ -244,9 +294,40 @@ def _build_design_points(
                 "parameter": "cv_thr",
                 "value": float(cv_thr_value),
                 "n_reps": config.n_reps,
+                "n_prts": config.n_prts,
                 "eq_thr": config.eq_thr,
                 "cv_mean": config.cv_mean,
                 "cv_thr": float(cv_thr_value),
+                "delta": config.delta,
+            }
+        )
+    # 1D delta sweep: only when user has specified a non-trivial delta grid.
+    if _has_delta_sweep:
+        for delta_val in config.delta_grid:
+            design_points.append(
+                {
+                    "parameter": "delta",
+                    "value": float(delta_val),
+                    "n_reps": config.n_reps,
+                    "n_prts": config.n_prts,
+                    "eq_thr": config.eq_thr,
+                    "cv_mean": config.cv_mean,
+                    "cv_thr": config.cv_thr,
+                    "delta": float(delta_val),
+                }
+            )
+    # 1D n_prts sweep: only when n_prts_grid is non-empty.
+    for n_prts_val in config.n_prts_grid:
+        design_points.append(
+            {
+                "parameter": "n_prts",
+                "value": int(n_prts_val),
+                "n_reps": config.n_reps,
+                "n_prts": int(n_prts_val),
+                "eq_thr": config.eq_thr,
+                "cv_mean": config.cv_mean,
+                "cv_thr": config.cv_thr,
+                "delta": config.delta,
             }
         )
     # Cross-product axes only when both participating axes have multiple distinct values.
@@ -256,12 +337,92 @@ def _build_design_points(
                 "parameter": "eq_thr_n_reps",
                 "value": eq_thr,
                 "n_reps": n_reps,
+                "n_prts": config.n_prts,
                 "eq_thr": eq_thr,
                 "cv_mean": config.cv_mean,
                 "cv_thr": config.cv_thr,
+                "delta": config.delta,
             }
             for eq_thr in config.eq_boundaries
             for n_reps in config.n_reps_grid
+        )
+    if len(config.cv_mean_grid) > 1 and len(config.n_reps_grid) > 1:
+        design_points.extend(
+            {
+                "parameter": "cv_mean_n_reps",
+                "value": cv_mean,
+                "n_reps": n_reps,
+                "n_prts": config.n_prts,
+                "eq_thr": config.eq_thr,
+                "cv_mean": cv_mean,
+                "cv_thr": config.cv_thr,
+                "delta": config.delta,
+            }
+            for cv_mean in config.cv_mean_grid
+            for n_reps in config.n_reps_grid
+        )
+    if len(config.eq_boundaries) > 1 and len(config.cv_mean_grid) > 1:
+        design_points.extend(
+            {
+                "parameter": "eq_thr_cv_mean",
+                "value": eq_thr,
+                "n_reps": config.n_reps,
+                "n_prts": config.n_prts,
+                "eq_thr": eq_thr,
+                "cv_mean": cv_mean,
+                "cv_thr": config.cv_thr,
+                "delta": config.delta,
+            }
+            for eq_thr in config.eq_boundaries
+            for cv_mean in config.cv_mean_grid
+        )
+    # delta × n_reps: effect-size by sample-size power curve.
+    if _has_delta_sweep and len(config.n_reps_grid) > 1:
+        design_points.extend(
+            {
+                "parameter": "delta_n_reps",
+                "value": float(delta_val),
+                "n_reps": n_reps,
+                "n_prts": config.n_prts,
+                "eq_thr": config.eq_thr,
+                "cv_mean": config.cv_mean,
+                "cv_thr": config.cv_thr,
+                "delta": float(delta_val),
+            }
+            for delta_val in config.delta_grid
+            for n_reps in config.n_reps_grid
+        )
+    # delta × eq_thr: how does boundary choice interact with true effect size?
+    if _has_delta_sweep and len(config.eq_boundaries) > 1:
+        design_points.extend(
+            {
+                "parameter": "delta_eq_thr",
+                "value": float(delta_val),
+                "n_reps": config.n_reps,
+                "n_prts": config.n_prts,
+                "eq_thr": eq_thr,
+                "cv_mean": config.cv_mean,
+                "cv_thr": config.cv_thr,
+                "delta": float(delta_val),
+            }
+            for delta_val in config.delta_grid
+            for eq_thr in config.eq_boundaries
+        )
+    # delta × cv_mean: noise-to-signal ratio effect on classification.
+    if _has_delta_sweep and len(config.cv_mean_grid) > 1:
+        design_points.extend(
+            {
+                "parameter": "delta_cv_mean",
+                "value": float(delta_val),
+                "n_reps": config.n_reps,
+                "n_prts": config.n_prts,
+                "eq_thr": config.eq_thr,
+                "cv_mean": cv_mean,
+                "cv_thr": config.cv_thr,
+                "delta": float(delta_val),
+            }
+            for delta_val in config.delta_grid
+            for cv_mean in config.cv_mean_grid
         )
     if len(config.eq_boundaries) > 1 and len(config.n_reps_grid) > 1 and len(cv_thr_list) > 1:
         design_points.extend(
@@ -269,9 +430,11 @@ def _build_design_points(
                 "parameter": "eq_thr_n_reps_cv_thr",
                 "value": eq_thr,
                 "n_reps": n_reps,
+                "n_prts": config.n_prts,
                 "eq_thr": eq_thr,
                 "cv_mean": config.cv_mean,
                 "cv_thr": float(cv_thr_value),
+                "delta": config.delta,
             }
             for eq_thr in config.eq_boundaries
             for n_reps in config.n_reps_grid
@@ -290,6 +453,7 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
             row["eq_thr"],
             row["cv_mean"],
             row["cv_thr"],
+            row.get("true_delta", 0.0),
         )
         grouped.setdefault(key, []).append(row)
 
@@ -306,6 +470,10 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
         )
         excluded_rates = np.array([row["excluded_rate"] for row in rows], dtype=np.float64)
         sei_mean = float(np.mean(sei_values))
+        sei_sd = float(np.std(sei_values, ddof=0))
+        # Convergence metric: coefficient of variation of SEI across iterations.
+        # Values < 0.10 indicate stable estimates at the current iteration count.
+        sei_convergence = sei_sd / sei_mean if sei_mean > 0.0 else float("nan")
         # Power per iteration: continuous score capped at 1.
         # Matches the reference calculate_power(simulated_sei, target_sei) formula:
         #   power_i = min(1, 1 - max(0, target_sei - sei_i))
@@ -326,11 +494,14 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
                 "df_thr": first["df_thr"],
                 "cv_thr": first["cv_thr"],
                 "cv_mean": first["cv_mean"],
+                "true_delta": first.get("true_delta", 0.0),
                 "target_sei": first["target_sei"],
                 "target_power": first["target_power"],
                 "n_iterations": first["n_iterations"],
                 "sei_mean": sei_mean,
                 "sei_sd": float(np.std(sei_values, ddof=0)),
+                "sei_convergence": sei_convergence,
+                "converged": (not np.isnan(sei_convergence)) and sei_convergence < 0.10,
                 "sei_q05": float(np.quantile(sei_values, 0.05)),
                 "sei_q50": float(np.quantile(sei_values, 0.50)),
                 "sei_q95": float(np.quantile(sei_values, 0.95)),
