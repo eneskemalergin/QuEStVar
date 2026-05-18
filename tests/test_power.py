@@ -339,20 +339,7 @@ class TestPowerWorkflowImprovements:
         assert isinstance(tbl, pl.DataFrame)
         assert len(tbl) > 0
 
-    def test_delta_sweep_generates_delta_1d_rows(self):
-        results = run_power_analysis(
-            eq_boundaries=np.array([0.5]),
-            n_reps_list=[5],
-            cv_mean_list=[0.20],
-            delta_list=[0.0, 0.5, 1.0],
-            n_prts=200,
-            n_iterations=2,
-            n_jobs=1,
-        )
-        delta_rows = [r for r in results.design_grid if r["parameter"] == "delta"]
-        assert len(delta_rows) == 3
-
-    def test_delta_sweep_not_generated_without_explicit_list(self):
+    def test_design_grid_does_not_include_delta_rows(self):
         results = run_power_analysis(
             eq_boundaries=np.array([0.5]),
             n_reps_list=[5],
@@ -361,79 +348,33 @@ class TestPowerWorkflowImprovements:
             n_iterations=2,
             n_jobs=1,
         )
-        delta_rows = [r for r in results.design_grid if r["parameter"] == "delta"]
-        assert len(delta_rows) == 0
+        assert all(not str(r["parameter"]).startswith("delta") for r in results.design_grid)
 
-    def test_delta_rows_have_true_delta_field(self):
+    def test_design_grid_rows_do_not_include_true_delta(self):
         results = run_power_analysis(
             eq_boundaries=np.array([0.5]),
             n_reps_list=[5],
             cv_mean_list=[0.20],
-            delta_list=[0.0, 0.5],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,
         )
         for row in results.design_grid:
-            assert "true_delta" in row
+            assert "true_delta" not in row
 
-    def test_delta_n_reps_cross_product_exists(self):
+    def test_all_simulated_features_are_truly_equivalent(self):
         results = run_power_analysis(
             eq_boundaries=np.array([0.5]),
             n_reps_list=[5, 10],
             cv_mean_list=[0.20],
-            delta_list=[0.0, 0.5],
             n_prts=200,
             n_iterations=2,
             n_jobs=1,
         )
-        cross_rows = [r for r in results.design_grid if r["parameter"] == "delta_n_reps"]
-        # 2 delta values x 2 n_reps values
-        assert len(cross_rows) == 4
-
-    def test_delta_eq_thr_cross_product_exists(self):
-        results = run_power_analysis(
-            eq_boundaries=np.array([0.3, 0.5]),
-            n_reps_list=[5],
-            cv_mean_list=[0.20],
-            delta_list=[0.0, 0.5],
-            n_prts=200,
-            n_iterations=2,
-            n_jobs=1,
-        )
-        cross_rows = [r for r in results.design_grid if r["parameter"] == "delta_eq_thr"]
-        # 2 delta values x 2 eq_thr values
-        assert len(cross_rows) == 4
-
-    def test_delta_cv_mean_cross_product_exists(self):
-        results = run_power_analysis(
-            eq_boundaries=np.array([0.5]),
-            n_reps_list=[5],
-            cv_mean_list=[0.15, 0.30],
-            delta_list=[0.0, 0.5],
-            n_prts=200,
-            n_iterations=2,
-            n_jobs=1,
-        )
-        cross_rows = [r for r in results.design_grid if r["parameter"] == "delta_cv_mean"]
-        # 2 delta values x 2 cv_mean values
-        assert len(cross_rows) == 4
-
-    def test_large_delta_increases_diff_rate(self):
-        # With true effect >> df_thr, diff_rate should rise clearly above 0.
-        results = run_power_analysis(
-            eq_boundaries=np.array([0.5]),
-            n_reps_list=[20],
-            cv_mean_list=[0.20],
-            delta_list=[0.0, 3.0],
-            n_prts=500,
-            n_iterations=5,
-            n_jobs=1,
-        )
-        delta0_rows = [r for r in results.design_grid if r["parameter"] == "delta" and r["true_delta"] == 0.0]
-        delta3_rows = [r for r in results.design_grid if r["parameter"] == "delta" and r["true_delta"] == 3.0]
-        assert delta0_rows and delta3_rows
-        assert delta3_rows[0]["diff_rate"] > delta0_rows[0]["diff_rate"]
+        assert results.run_metrics
+        assert all("n_equivalent_true" not in r for r in results.run_metrics)
+        assert all("success" not in r for r in results.run_metrics)
+        assert all(r["false_diff_rate"] >= 0.0 for r in results.run_metrics)
 
     def test_n_prts_sweep_generates_n_prts_rows(self):
         results = run_power_analysis(

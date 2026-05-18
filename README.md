@@ -121,7 +121,7 @@ Power analysis:
 questvar power \
   --eq-boundaries 0.1,0.3,0.5,0.7,0.9 \
   --n-reps-list 3,5,10,20 \
-  --cv-mean-list 15,27.5,40 \
+    --cv-mean-list 0.15,0.275,0.40 \
   --output power_results.parquet
 ```
 
@@ -151,7 +151,7 @@ results = qv.test(data, cond_1=["A1", "A2"], cond_2=["B1", "B2"])
 power = qv.run_power_analysis(
     eq_boundaries=[0.3, 0.5, 0.7],
     n_reps_list=[3, 5, 10],
-    cv_mean_list=[15, 27.5, 40],
+    cv_mean_list=[0.15, 0.275, 0.40],
     n_prts=10000,
     n_iterations=10,
     target_power=0.8,

@@ -187,7 +187,6 @@ def _fmt(v: Any, fmt: str = ".3f") -> str:
 def print_grid(
     design_grid: list[dict],
     parameter: str | None = None,
-    show_delta: bool = False,
     max_rows: int = 30,
 ) -> None:
     """Print a filtered slice of the design grid as a table."""
@@ -199,19 +198,11 @@ def print_grid(
         print(_c("  (no rows to display)", GRAY))
         return
 
-    # Header
-    if show_delta:
-        hdr = (
-            f"  {'parameter':<18} {'value':>6} {'n_reps':>6} "
-            f"{'cv_mean':>8} {'eq_thr':>7} {'delta':>6} "
-            f"{'SEI':>6} {'power':>6} {'diff%':>6}  status"
-        )
-    else:
-        hdr = (
-            f"  {'parameter':<18} {'value':>6} {'n_reps':>6} "
-            f"{'cv_mean':>8} {'eq_thr':>7} "
-            f"{'SEI':>6} {'power':>6} {'diff%':>6}  status"
-        )
+    hdr = (
+        f"  {'parameter':<18} {'value':>6} {'n_reps':>6} "
+        f"{'cv_mean':>8} {'eq_thr':>7} "
+        f"{'SEI':>6} {'power':>6} {'false diff%':>11}  status"
+    )
     print(_c(hdr, BOLD, WHITE))
     hr("─", width=W - 2, color=GRAY)
 
@@ -221,20 +212,11 @@ def print_grid(
         sei  = r.get("sei_mean", float("nan"))
         pwr  = r.get("power", float("nan"))
         diff = r.get("diff_rate", 0.0)
-        delta_val = r.get("true_delta", 0.0)
-
-        if show_delta:
-            row_str = (
-                f"  {r['parameter']:<18} {r['value']:>6.3f} {r['n_reps']:>6} "
-                f"{r['cv_mean']:>7.0%}  {r['eq_thr']:>6.2f} {delta_val:>6.2f} "
-                f"{sei:>6.3f} {pwr:>6.3f} {diff:>5.1%} {status_icon}"
-            )
-        else:
-            row_str = (
-                f"  {r['parameter']:<18} {r['value']:>6.3f} {r['n_reps']:>6} "
-                f"{r['cv_mean']:>7.0%}  {r['eq_thr']:>6.2f} "
-                f"{sei:>6.3f} {pwr:>6.3f} {diff:>5.1%} {status_icon}"
-            )
+        row_str = (
+            f"  {r['parameter']:<18} {r['value']:>6.3f} {r['n_reps']:>6} "
+            f"{r['cv_mean']:>7.0%}  {r['eq_thr']:>6.2f} "
+            f"{sei:>6.3f} {pwr:>6.3f} {diff:>10.1%} {status_icon}"
+        )
         color = BGREEN if feasible else WHITE
         print(_c(row_str, color))
 
@@ -323,8 +305,8 @@ def part0_foundations() -> None:
         "QuEStVar runs equivalence testing (TOST) and difference testing "
         "(Welch t-test) simultaneously, classifying each feature as "
         "equivalent, differential, not-significant, or excluded. Power "
-        "analysis asks: given a study design, how reliably does the test "
-        "classify features correctly?"
+        "analysis here assumes true log2FC = 0 and asks: given a study "
+        "design, how reliably does the test recover truly equivalent features?"
     )
 
     subsection("Key design variables")
@@ -334,7 +316,6 @@ def part0_foundations() -> None:
         ("eq_thr",   "Equivalence boundary (log2FC)",  "Defines what 'close enough' means."               ),
         ("cv_mean",  "Mean coefficient of variation",  "Data precision; property of your platform/prep."  ),
         ("cv_thr",   "CV outlier filter threshold",    "Removes features with CV > threshold (100-150 %)."),
-        ("delta",    "True effect size (log2FC)",       "How different are the two conditions, really?"    ),
         ("n_prts",   "Feature count",                   "Affects multiple-testing correction (FDR)."       ),
     ]
     print(f"  {'Variable':<12}  {'Meaning':<35}  {'Why it matters'}")
@@ -380,21 +361,20 @@ def part0_foundations() -> None:
         "exceeds the threshold; the intended range is 100-150 % (1.0-1.5), "
         "not a tight precision filter.\n\n"
         "Three related concepts govern design evaluation:\n"
-        "  SEI (sei_mean) -- absolute fraction of CV-filtered equivalent features\n"
-        "    correctly recovered by TOST. Denominator is tested features only;\n"
-        "    excluded features do not penalise the score. Range [0, 1].\n"
-        "  SEI ceiling (sei_ceiling = 1 - cv_mean) -- CV-adjusted reference\n"
-        "    anchor. At this CV, pushing SEI well above (1 - cv_mean) requires\n"
-        "    many extra replicates for diminishing return. Not a hard physical\n"
-        "    limit, but a practical calibration point.\n"
-        "  Power -- relative progress toward the effective target, which is\n"
-        "    min(target_sei, sei_ceiling). Formula:\n"
+        "  SEI -- absolute fraction of CV-filtered equivalent features correctly\n"
+        "    recovered by TOST (true LFC = 0). Denominator is tested features\n"
+        "    only; CV-excluded features do not penalise the score. Range [0, 1].\n"
+        "  SEI ceiling (1 - cv_mean) -- CV-adjusted reference anchor. Not a hard\n"
+        "    physical limit, but pushing SEI well above this point yields\n"
+        "    diminishing returns.\n"
+        "  Power -- how close SEI is to min(target_sei, sei_ceiling). Formula:\n"
         "      power = min(1, 1 - max(0, effective_target - sei_mean))\n"
-        "    power = 1 when SEI reaches the effective target; power < 1 while\n"
-        "    below it. Power is always >= SEI. A design is feasible when\n"
-        "    power >= target_power (default 0.80).\n\n"
-        "Equivalence threshold (eq_thr) and effect size (delta) are in log2 "
-        "fold-change units: log2FC 0.5 is a 41 % difference, log2FC 1.0 is 2x."
+        "    power = 1 when SEI reaches the target; power >= SEI always. A design\n"
+        "    is feasible when power >= target_power (default 0.80).\n\n"
+        "Both eq_thr and df_thr are expressed in log2 fold-change units:\n"
+        "log2FC 0.5 is a 41 % difference, log2FC 1.0 is 2x.\n"
+        "Because the power simulation fixes true log2FC at 0, any reported\n"
+        "differential calls are false positives under that design."
     )
 
 
@@ -644,138 +624,8 @@ def part5_2d_tables() -> None:
     )
 
 
-def part6_delta_sweep() -> None:
-    section(6, "Effect Size Analysis", "What if the features are NOT equivalent?")
-
-    note(
-        "Every previous analysis assumed delta=0: both conditions are drawn "
-        "from identical distributions (pure equivalence).  Real data mixes "
-        "truly equivalent features with some that differ.  delta (in log2FC) "
-        "is the TRUE effect size between conditions. Sweeping delta reveals "
-        "the full Type I / Type II error landscape of your design."
-    )
-
-    note(
-        "Interpretation by delta zone:\n"
-        "  delta < eq_thr  ->  features should be called EQUIVALENT  ->  SEI is the right metric\n"
-        "  delta = eq_thr  ->  right on the boundary; test power is ~50 %\n"
-        "  eq_thr < delta < df_thr  ->  gray zone; expect 'not significant'\n"
-        "  delta >= df_thr ->  features should be called DIFFERENTIAL ->  diff_rate is the metric"
-    )
-
-    code([
-        "results = run_power_analysis(",
-        "    delta_list=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0],",
-        "    eq_boundaries=[0.5],   # equivalence zone: |log2FC| < 0.5",
-        "    df_thr=1.0,            # differential zone: |log2FC| > 1.0",
-        "    n_reps_list=[8],",
-        "    cv_mean_list=[0.20],",
-        "    ...  # parameter='delta' rows in design_grid",
-        ")",
-    ])
-
-    t = running("delta sweep  (n_reps=8, cv=20 %, eq_thr=0.5, df_thr=1.0)")
-    results = run_power_analysis(
-        eq_boundaries=np.array([0.5]),
-        n_reps_list=[8],
-        cv_mean_list=[0.20],
-        delta_list=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0],
-        df_thr=1.0,
-        n_prts=2000,
-        n_iterations=20,
-        target_sei=0.80,
-        target_power=0.80,
-        random_seed=42,
-        n_jobs=1,
-    )
-    done(t)
-
-    print_grid(results.design_grid, parameter="delta", show_delta=True)
-
-    note(
-        "Notice: SEI stays high (features correctly called equivalent) while "
-        "delta stays below eq_thr=0.5.  Once delta exceeds the boundary, SEI "
-        "correctly drops toward zero.  diff_rate climbs steeply above df_thr=1.0, "
-        "showing the differential detection power of this design."
-    )
-
-
-def part7_delta_crossproducts() -> None:
-    section(7, "Effect-Size Cross-Products", "Minimum detectable difference")
-
-    note(
-        "Three cross-products involving delta answer the most practically useful "
-        "questions a study designer has:\n"
-        "  delta x n_reps   : power curve - effect size vs sample size\n"
-        "  delta x eq_thr   : boundary resolution - can we distinguish delta from eq_thr?\n"
-        "  delta x cv_mean  : noise-to-signal - when does CV wash out a true effect?"
-    )
-
-    t = running("delta cross-products  (delta x n_reps, delta x eq_thr)")
-    results = run_power_analysis(
-        eq_boundaries=np.array([0.3, 0.5, 0.8]),
-        n_reps_list=[5, 10, 20],
-        cv_mean_list=[0.20],
-        delta_list=[0.0, 0.3, 0.5, 0.8, 1.0],
-        df_thr=1.0,
-        n_prts=1500,
-        n_iterations=15,
-        target_sei=0.80,
-        target_power=0.80,
-        random_seed=42,
-        n_jobs=1,
-    )
-    done(t)
-
-    subsection("delta x n_reps: at what sample size can I detect a fold-change of X?")
-    cross_rows = [r for r in results.design_grid if r["parameter"] == "delta_n_reps"]
-    print(
-        f"  {'delta':>6}  {'n_reps':>6}  {'SEI':>7}  {'diff%':>7}  "
-        f"{'eq_zone':>8}  {'status'}"
-    )
-    hr("─", width=W - 2, color=GRAY)
-    for r in cross_rows:
-        delta = r["true_delta"]
-        eq_thr = r["eq_thr"]
-        in_eq  = delta < eq_thr
-        zone = _c("equiv", BGREEN) if in_eq else (_c("diff ", BRED) if delta >= r["df_thr"] else _c("gray ", BYELLOW))
-        print(
-            f"  {delta:>6.2f}  {r['n_reps']:>6}  {r['sei_mean']:>7.3f}  "
-            f"{r['diff_rate']:>6.1%}  {zone:>18}  "
-            + (_c("✔", BGREEN) if r["feasible"] else _c("✗", BRED))
-        )
-    blank()
-
-    subsection("delta x eq_thr: how does boundary choice affect misclassification?")
-    cross_eq = [r for r in results.design_grid if r["parameter"] == "delta_eq_thr"]
-    print(
-        f"  {'delta':>6}  {'eq_thr':>7}  {'SEI':>7}  {'diff%':>7}  "
-        f"{'false equiv?':>13}"
-    )
-    hr("─", width=W - 2, color=GRAY)
-    for r in cross_eq:
-        delta = r["true_delta"]
-        eq_thr = r["eq_thr"]
-        # When delta > eq_thr, features that are called equivalent are FALSE positives
-        false_equiv = delta > eq_thr
-        flag = _c("  FALSE +", BRED) if false_equiv else _c("  correct", BGREEN)
-        print(
-            f"  {delta:>6.2f}  {eq_thr:>7.2f}  {r['sei_mean']:>7.3f}  "
-            f"{r['diff_rate']:>6.1%}  {flag}"
-        )
-    blank()
-
-    note(
-        "The delta × eq_thr table is the most important output for study planning. "
-        "Every row where delta > eq_thr AND sei_mean is still high represents "
-        "features being INCORRECTLY classified as equivalent, a false equivalence. "
-        "Your boundary must be set wider than the largest true effect you are "
-        "willing to tolerate as 'equivalent'."
-    )
-
-
 def part8_nprts_sweep() -> None:
-    section(8, "Feature Count & Multiple Testing", "Does it matter if I measure 300 or 10,000 features?")
+    section(6, "Feature Count & Multiple Testing", "Does it matter if I measure 300 or 10,000 features?")
 
     note(
         "Yes, substantially. Benjamini-Hochberg FDR correction becomes more "
@@ -814,7 +664,7 @@ def part8_nprts_sweep() -> None:
 
     nprts_rows = [r for r in results.design_grid if r["parameter"] == "n_prts"]
     print(
-        f"  {'n_features':>12}  {'SEI':>7}  {'diff%':>7}  "
+        f"  {'n_features':>12}  {'SEI':>7}  {'false diff%':>12}  "
         f"{'excluded%':>10}  status"
     )
     hr("─", width=W - 2, color=GRAY)
@@ -869,7 +719,8 @@ def part8_nprts_sweep() -> None:
     g_fdr  = [r for r in r_fdr.design_grid  if r["parameter"] == "n_reps"][0]
     g_none = [r for r in r_none.design_grid if r["parameter"] == "n_reps"][0]
 
-    print(f"  {'Correction':<18}  {'SEI':>7}  {'power':>7}  {'diff%':>7}  {'excl%':>7}")
+    print(f"  {'Correction':<18}  {'SEI':>7}  {'power':>7}  {'false diff%':>12}  {'excl%':>7}")
+    print(f"  {_c('Interpretation:', DIM)} false diff% here means false differentials under true log2FC = 0.")
     hr("─", width=W - 2, color=GRAY)
     for label, g in [("FDR (BH)", g_fdr), ("None", g_none)]:
         print(
@@ -880,7 +731,7 @@ def part8_nprts_sweep() -> None:
 
 
 def part9_optimal_finder() -> None:
-    section(9, "Optimal Design Finder", "Just tell me the answer")
+    section(7, "Optimal Design Finder", "Just tell me the answer")
 
     note(
         "The search_results attribute gives concrete recommendations: the "
@@ -954,7 +805,7 @@ def part9_optimal_finder() -> None:
 
 
 def part10_cross_omics() -> None:
-    section(10, "Cross-Platform Comparison", "Comparing three representative study types")
+    section(8, "Cross-Platform Comparison", "Comparing three representative study types")
 
     note(
         "Three representative platforms: targeted proteomics (SRM/PRM, CV~8 %), "
@@ -1023,7 +874,7 @@ def part10_cross_omics() -> None:
 
 
 def part11_save_and_load() -> None:
-    section(11, "Save, Load & YAML Config", "Persisting and reproducing analyses")
+    section(9, "Save, Load & YAML Config", "Persisting and reproducing analyses")
 
     note(
         "Power analyses should be reproducible. QuEStVar supports saving "
@@ -1094,7 +945,7 @@ def part11_save_and_load() -> None:
 
 
 def part12_convergence() -> None:
-    section(12, "Convergence & Diagnostics", "How many iterations do I actually need?")
+    section(10, "Convergence & Diagnostics", "How many iterations do I actually need?")
 
     note(
         "Monte Carlo power estimates converge as n_iterations grows. QuEStVar "
@@ -1152,14 +1003,15 @@ def part12_convergence() -> None:
 
 
 def part13_full_example() -> None:
-    section(13, "Putting It All Together", "A realistic study planning workflow")
+    section(11, "Putting It All Together", "A realistic study planning workflow")
 
     note(
         "A researcher is designing a multi-condition equivalence study on a "
         "mid-variability discovery platform. They have pilot data suggesting "
         "CV ~ 22 %, they are measuring ~4,000 features with FDR correction, "
         "and they want to know: (1) minimum replicates, (2) safe equivalence "
-        "boundary, and (3) their sensitivity to true fold-changes up to 1.0."
+        "boundary, and (3) whether the design remains viable across a realistic "
+        "CV range."
     )
 
     code([
@@ -1168,8 +1020,6 @@ def part13_full_example() -> None:
         "    eq_boundaries=[0.3, 0.4, 0.5, 0.7],",
         "    n_reps_list=[5, 8, 10, 15, 20],",
         "    cv_mean_list=[0.18, 0.22, 0.28],",
-        "    # Effect-size profiling",
-        "    delta_list=[0.0, 0.3, 0.5, 0.8, 1.0, 1.5],",
         "    # Study parameters",
         "    n_prts=4000,",
         "    df_thr=1.0,",
@@ -1188,7 +1038,6 @@ def part13_full_example() -> None:
         eq_boundaries=np.array([0.5, 0.3, 0.4, 0.7]),
         n_reps_list=[5, 8, 10, 15, 20],
         cv_mean_list=[0.22, 0.18, 0.28],
-        delta_list=[0.0, 0.3, 0.5, 0.8, 1.0, 1.5],
         n_prts=4000,
         df_thr=1.0,
         correction="fdr",
@@ -1219,37 +1068,12 @@ def part13_full_example() -> None:
     tbl = results.design_table(row_axis="eq_thr", col_axis="n_reps", metric="sei_mean")
     print_pivot(tbl, "eq_thr", "n_reps", "sei_mean")
 
-    subsection("Effect-size profile  (n_reps=5, eq_thr=0.5, cv_mean=0.22)")
-    delta_rows = [
-        r for r in results.design_grid
-        if r["parameter"] == "delta" and abs(r["eq_thr"] - 0.5) < 0.01
-    ]
-    if delta_rows:
-        print(
-            f"  {'delta':>6}  {'SEI':>7}  {'diff%':>7}  {'note'}"
-        )
-        hr("─", width=W - 2, color=GRAY)
-        for r in sorted(delta_rows, key=lambda x: x["true_delta"]):
-            d_val = r["true_delta"]
-            eq    = r["eq_thr"]
-            df    = r["df_thr"]
-            zone  = (
-                _c("within eq boundary  (call equiv)", BGREEN)
-                if d_val < eq
-                else (_c("above df boundary (call diff) ", BRED) if d_val >= df
-                      else _c("gray zone        (ambiguous)", BYELLOW))
-            )
-            print(
-                f"  {d_val:>6.2f}  {r['sei_mean']:>7.3f}  {r['diff_rate']:>6.1%}  {zone}"
-            )
-        blank()
-
     note(
         "From this analysis: at 22 % CV with FDR correction on 4,000 features, "
         "the minimum n_reps for power >= 0.80 at eq_thr=0.5 is found by the "
-        "optimal design search. The delta sweep shows that features with true "
-        "log2FC >= 1.0 (df_thr) are correctly identified as differential, while "
-        "features in the 0.5-1.0 gray zone accumulate as 'not significant'. "
+        "optimal design search. The CV sweep shows how quickly feasibility can "
+        "erode as measurement noise rises, even when the equivalence boundary is "
+        "held fixed. "
         "Tightening the boundary to eq_thr=0.3 requires substantially more "
         "replicates. The pivot table makes this tradeoff immediately visible."
     )
@@ -1268,7 +1092,6 @@ def closing() -> None:
         ("  n_reps_list",                 "List of replicate counts to sweep."                    ),
         ("  cv_mean_list",                "List of mean CVs (as ratios, e.g. 0.20)."              ),
         ("  eq_boundaries",               "Array of equivalence thresholds (log2FC)."             ),
-        ("  delta_list",                  "List of true effect sizes to simulate."                 ),
         ("  n_prts_list",                 "List of feature counts to sweep (MTC effect)."         ),
         ("  target_sei",                  "Target SEI for power calculations."                    ),
         ("  target_power",                "Target power threshold for design search."             ),
@@ -1289,9 +1112,8 @@ def closing() -> None:
         ("Key design_grid columns:",      ""),
         ("  sei_mean",                    "Mean SEI across Monte Carlo iterations."              ),
         ("  power",                       "Aggregated power score (target: >= target_power)."   ),
-        ("  diff_rate",                   "Fraction of features called differential."            ),
+        ("  diff_rate",                   "False-differential fraction under true log2FC = 0." ),
         ("  excluded_rate",               "Fraction filtered out by CV threshold."               ),
-        ("  true_delta",                  "True effect size simulated for this row."             ),
         ("  sei_convergence",             "CV of SEI across iterations. <0.10 = converged."     ),
         ("  feasible",                    "True when power >= target_power."                     ),
     ]
@@ -1326,8 +1148,6 @@ if __name__ == "__main__":
         (part3_cv_sweep,          "Data Variability Sweep"),
         (part4_eqthr_sweep,       "Equivalence Boundary Sweep"),
         (part5_2d_tables,         "2D Design Maps"),
-        (part6_delta_sweep,       "Effect Size Analysis"),
-        (part7_delta_crossproducts, "Effect-Size Cross-Products"),
         (part8_nprts_sweep,       "Feature Count and Multiple Testing"),
         (part9_optimal_finder,    "Optimal Design Finder"),
         (part10_cross_omics,      "Cross-Platform Comparison"),

@@ -77,7 +77,6 @@ class PowerConfig(_ConfigMixin):
     cv_k: float = 2.0
     cv_theta: float = 0.5
     eq_thr: float = 0.5
-    delta: float = 0.0
     p_thr: float = 0.05
     df_thr: float = 1.0
     cv_thr: float = 1.0
@@ -91,7 +90,6 @@ class PowerConfig(_ConfigMixin):
     n_reps_grid: tuple[int, ...] = (3, 5, 10, 20)
     n_prts_grid: tuple[int, ...] = ()
     cv_mean_grid: tuple[float, ...] = (0.10, 0.20, 0.30)
-    delta_grid: tuple[float, ...] = (0.0,)
     cv_thr_grid: tuple[float, ...] = (1.0, 1.5, 2.0)
     random_seed: int | None = None
     n_jobs: int | None = None
@@ -128,7 +126,6 @@ class PowerConfig(_ConfigMixin):
         object.__setattr__(self, "n_reps_grid", _as_int_tuple(self.n_reps_grid))
         object.__setattr__(self, "n_prts_grid", _as_int_tuple(self.n_prts_grid))
         object.__setattr__(self, "cv_mean_grid", _as_float_tuple(self.cv_mean_grid))
-        object.__setattr__(self, "delta_grid", _as_float_tuple(self.delta_grid))
         object.__setattr__(self, "cv_thr_grid", _as_float_tuple(self.cv_thr_grid))
 
         if len(self.eq_boundaries) == 0:
@@ -139,8 +136,6 @@ class PowerConfig(_ConfigMixin):
             raise ValueError("cv_mean_grid must not be empty")
         if len(self.cv_thr_grid) == 0:
             raise ValueError("cv_thr_grid must not be empty")
-        if len(self.delta_grid) == 0:
-            raise ValueError("delta_grid must not be empty")
 
         if any(boundary <= 0 for boundary in self.eq_boundaries):
             raise ValueError("eq_boundaries values must be > 0")
