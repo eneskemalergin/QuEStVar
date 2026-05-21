@@ -32,7 +32,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from questvar.plot._config import PlotConfig
-from questvar.plot._helpers import finalize_plot
+from questvar.plot._helpers import finalize_plot, style_ax
+from questvar.plot.antlers import antlers
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -148,15 +149,7 @@ def plot_summary(
         ),
     )
 
-    # ------------------------------------------------------------------
-    # Antler's plot Y-axis (signed log p-value)
-    # - |log2fc| < eq_thr: log10(eq_adjp) [negative, equivalence region]
-    # - |log2fc| >= eq_thr: -log10(df_adjp) [positive, difference region]
-    # ------------------------------------------------------------------
-    with np.errstate(divide="ignore", invalid="ignore"):
-        _log_eq = np.where(eq_adjp_arr > 0, np.log10(eq_adjp_arr), np.nan)
-        _log_df = np.where(df_adjp > 0, -np.log10(df_adjp), np.nan)
-    antler_y = np.where(np.abs(log2fc) < eq_thr, _log_eq, _log_df)
+
 
     # ------------------------------------------------------------------
     # Status counts (tested features + excluded from info)
@@ -175,72 +168,47 @@ def plot_summary(
     status_colors = pc.status_colors
 
     # ------------------------------------------------------------------
-    # Styling helpers
+    # Design language constants  (based on title_fontsize for scaling)
     # ------------------------------------------------------------------
+    _panel_fs    = title_fontsize       # panel letter badge
+    _subtitle_fs = title_fontsize - 4   # per-panel subtitle
+    _label_fs    = title_fontsize - 5   # axis labels
+    _tick_fs     = pc.tick_fontsize     # tick labels (from PlotConfig)
+
     _subtitle_kw: dict[str, Any] = dict(
-        fontsize=title_fontsize - 4,
-        fontstyle="italic",
-        color=pc.title_color,
-        pad=5,
+        fontsize=_subtitle_fs, fontstyle="italic",
+        color=pc.title_color, pad=5,
     )
-    _ax_label_kw: dict[str, Any] = dict(
-        fontsize=title_fontsize - 5,
-        color="black",
-        labelpad=5,
-    )
-    _tick_kw: dict[str, Any] = dict(labelsize=title_fontsize - 7, pad=2)
     _legend_kw: dict[str, Any] = dict(
-        fontsize=legend_fontsize - 1,
-        frameon=True,
-        fancybox=True,
-        shadow=True,
-        framealpha=0.95,
-        handlelength=2.0,
-        handletextpad=0.4,
-        columnspacing=0.4,
-        labelspacing=0.3,
-        borderpad=0.6,
-    )
-    # Grid: keep alpha lighter than the power plot (dense scatter needs breathing room)
-    _grid_kw: dict[str, Any] = dict(
-        alpha=0.3,
-        linestyle=pc.grid_linestyle,
-        linewidth=pc.grid_linewidth,
-        color=pc.grid_color,
+        fontsize=legend_fontsize - 1, frameon=pc.legend_frameon,
+        handlelength=2.0, handletextpad=0.4,
+        labelspacing=0.3, borderpad=0.5,
     )
     _box_kw: dict[str, Any] = dict(
-        boxstyle="round,pad=0.5",
-        facecolor=pc.annotation_box_facecolor,
-        alpha=0.9,
-        edgecolor=pc.annotation_box_edgecolor,
-        linewidth=1,
+        boxstyle="round,pad=0.5", facecolor=pc.annotation_box_facecolor,
+        alpha=0.9, edgecolor=pc.annotation_box_edgecolor, linewidth=1,
     )
 
-    # Threshold line styles - sourced from PlotConfig for consistent visual language
+    # Threshold colors from PlotConfig
     _eq_col = pc.eq_threshold_color
     _df_col = pc.df_threshold_color
     _eq_ls  = pc.eq_threshold_linestyle
     _df_ls  = pc.df_threshold_linestyle
     _thr_lw = pc.threshold_linewidth
 
-    def _letter(ax, letter: str) -> None:
-        ax.text(
-            0.02, 0.97, letter,
-            transform=ax.transAxes,
-            fontsize=title_fontsize,
-            fontweight="bold",
-            color="black",
-            ha="center",
-            va="top",
-            bbox=dict(
-                boxstyle="round,pad=0.3",
-                facecolor="white",
-                edgecolor="black",
-                linewidth=1,
-            ),
+    def _letter(ax, label: str) -> None:
+        """Draw a panel letter badge above the top-left corner of the axis."""
+        ax.annotate(
+            label,
+            xy=(0, 1), xytext=(-10, 8),
+            xycoords="axes fraction", textcoords="offset points",
+            fontsize=_panel_fs, fontweight="bold",
+            color=pc.label_color, ha="right", va="bottom",
+            bbox=dict(boxstyle="round,pad=0.25", facecolor="#fafafa",
+                       edgecolor="#cccccc", linewidth=0.8),
         )
 
-    scatter_order = ["Excluded", "Unexplained", "Downregulated", "Upregulated", "Equivalent"]
+    scatter_order = list(pc.status_order)
     if not show_excluded:
         scatter_order = [s for s in scatter_order if s != "Excluded"]
 
@@ -260,8 +228,13 @@ def plot_summary(
         bottom=0.14,
     )
 
+    def _step_hist(ax, data, bins, color, label, alpha=0.85):
+        """Step-line histogram with thick stroke, for log y-axis."""
+        ax.hist(data, bins=bins, histtype="step", linewidth=2.0,
+                color=color, label=label, density=True, alpha=alpha)
+
     # ------------------------------------------------------------------
-    # Panel A: T-test p-value histogram
+    # Panel A: T-test p-value histogram  (step, density on log scale)
     # ------------------------------------------------------------------
     ax_a = fig.add_subplot(gs[0, 0])
     _letter(ax_a, "A")
@@ -269,29 +242,29 @@ def plot_summary(
     valid_dfp   = df_p_arr[~np.isnan(df_p_arr)]
     valid_dfadj = df_adjp[~np.isnan(df_adjp)]
 
-    if len(valid_dfp) > 0:
-        ax_a.hist(
-            valid_dfp, bins=30, alpha=0.6, color="#F8AD9D",
-            label="Raw p-values", density=True, edgecolor="black", linewidth=0.5,
-        )
-    if len(valid_dfadj) > 0:
-        ax_a.hist(
-            valid_dfadj, bins=30, alpha=0.8, color="#bc4749",
-            label=f"Adjusted ({correction})", density=True,
-            edgecolor="black", linewidth=0.5,
-        )
-    ax_a.axvline(
-        x=p_thr, color="black", linestyle="--", linewidth=1.5,
-        label=f"Threshold ({p_thr})", alpha=0.8,
-    )
-    ax_a.set_ylabel("Difference Testing\nP-value Density", **_ax_label_kw)
+    if len(valid_dfp) > 0 and len(valid_dfadj) > 0:
+        _shared = np.histogram_bin_edges(
+            np.concatenate([valid_dfp, valid_dfadj]), bins=30)
+        _step_hist(ax_a, valid_dfp, _shared, _df_col, "Raw", alpha=0.35)
+        _step_hist(ax_a, valid_dfadj, _shared, _df_col, f"Adj ({correction})")
+    elif len(valid_dfp) > 0:
+        ax_a.hist(valid_dfp, bins=30, histtype="step", linewidth=2.0,
+                  color=_df_col, label="Raw", density=True, alpha=0.35)
+    elif len(valid_dfadj) > 0:
+        ax_a.hist(valid_dfadj, bins=30, histtype="step", linewidth=2.0,
+                  color=_df_col, label=f"Adj ({correction})", density=True)
+
+    ax_a.axvline(x=p_thr, color=_df_col, linestyle="--", linewidth=1.5,
+                 label="Threshold", alpha=0.8)
+    ax_a.set_yscale("log")
+    style_ax(ax_a, pc, xlabel="P-value", ylabel="Difference Test\nDensity")
+    ax_a.xaxis.label.set_size(_label_fs)
+    ax_a.yaxis.label.set_size(_label_fs)
     ax_a.legend(**_legend_kw)
-    ax_a.grid(True, **_grid_kw)
-    ax_a.set_title("T-test P-values", **_subtitle_kw)
-    ax_a.tick_params(**_tick_kw)
+    ax_a.set_title("T-test", **_subtitle_kw)
 
     # ------------------------------------------------------------------
-    # Panel B: TOST p-value histogram
+    # Panel B: TOST p-value histogram  (step, density on log scale)
     # ------------------------------------------------------------------
     ax_b = fig.add_subplot(gs[1, 0])
     _letter(ax_b, "B")
@@ -299,27 +272,26 @@ def plot_summary(
     valid_eqp   = eq_p_arr[~np.isnan(eq_p_arr)]
     valid_eqadj = eq_adjp_arr[~np.isnan(eq_adjp_arr)]
 
-    if len(valid_eqp) > 0:
-        ax_b.hist(
-            valid_eqp, bins=30, alpha=0.6, color="#A8DADC",
-            label="Raw p-values", density=True, edgecolor="black", linewidth=0.5,
-        )
-    if len(valid_eqadj) > 0:
-        ax_b.hist(
-            valid_eqadj, bins=30, alpha=0.8, color="#457B9D",
-            label=f"Adjusted ({correction})", density=True,
-            edgecolor="black", linewidth=0.5,
-        )
-    ax_b.axvline(
-        x=p_thr, color="black", linestyle="--", linewidth=1.5,
-        label=f"Threshold ({p_thr})", alpha=0.8,
-    )
-    ax_b.set_xlabel("P-value", **_ax_label_kw)
-    ax_b.set_ylabel("Equivalence Testing\nP-value Density", **_ax_label_kw)
+    if len(valid_eqp) > 0 and len(valid_eqadj) > 0:
+        _shared = np.histogram_bin_edges(
+            np.concatenate([valid_eqp, valid_eqadj]), bins=30)
+        _step_hist(ax_b, valid_eqp, _shared, _eq_col, "Raw", alpha=0.35)
+        _step_hist(ax_b, valid_eqadj, _shared, _eq_col, f"Adj ({correction})")
+    elif len(valid_eqp) > 0:
+        ax_b.hist(valid_eqp, bins=30, histtype="step", linewidth=2.0,
+                  color=_eq_col, label="Raw", density=True, alpha=0.35)
+    elif len(valid_eqadj) > 0:
+        ax_b.hist(valid_eqadj, bins=30, histtype="step", linewidth=2.0,
+                  color=_eq_col, label=f"Adj ({correction})", density=True)
+
+    ax_b.axvline(x=p_thr, color=_eq_col, linestyle="--", linewidth=1.5,
+                 label="Threshold", alpha=0.8)
+    ax_b.set_yscale("log")
+    style_ax(ax_b, pc, xlabel="P-value", ylabel="Equivalence Test\nDensity")
+    ax_b.xaxis.label.set_size(_label_fs)
+    ax_b.yaxis.label.set_size(_label_fs)
     ax_b.legend(**_legend_kw)
-    ax_b.grid(True, **_grid_kw)
-    ax_b.set_title("TOST P-values", **_subtitle_kw)
-    ax_b.tick_params(**_tick_kw)
+    ax_b.set_title("TOST", **_subtitle_kw)
 
     # ------------------------------------------------------------------
     # Panel C: adjusted p-value scatter (df vs eq)
@@ -340,77 +312,36 @@ def plot_summary(
                 edgecolor="white", linewidth=0.3,
                 rasterized=rasterize_scatters, zorder=5,
             )
-    ax_c.axhline(y=p_thr, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
-    ax_c.axvline(x=p_thr, color="black", linestyle="--", linewidth=1.5, alpha=0.7)
-    ax_c.set_xlabel("Difference Test\nAdjusted P-value", **_ax_label_kw)
-    ax_c.set_ylabel("Equivalence Test\nAdjusted P-value", **_ax_label_kw)
+    style_ax(ax_c, pc, xlabel="Difference Test\nAdj. P-value",
+             ylabel="Equivalence Test\nAdj. P-value")
+    ax_c.xaxis.label.set_size(_label_fs)
+    ax_c.yaxis.label.set_size(_label_fs)
+    ax_c.axhline(y=p_thr, color=_eq_col, linestyle=_eq_ls, linewidth=_thr_lw, alpha=0.8, zorder=6)
+    ax_c.axvline(x=p_thr, color=_df_col, linestyle=_df_ls, linewidth=_thr_lw, alpha=0.8, zorder=6)
     ax_c.set_xscale("log")
     ax_c.set_yscale("log")
-    ax_c.grid(True, **_grid_kw)
-    ax_c.set_title("Comparison", **_subtitle_kw)
-    ax_c.tick_params(**_tick_kw)
+    ax_c.set_title("P-value Agreement", **_subtitle_kw)
 
     # ------------------------------------------------------------------
-    # Panel D: Antler's plot
+    # Panel D: Antler's plot (delegated to the standalone function)
     # ------------------------------------------------------------------
     ax_d = fig.add_subplot(gs[0:2, 1:3])
+    antlers(
+        results,
+        ax=ax_d,
+        config=pc,
+        cond_1_label=cond_1_label,
+        cond_2_label=cond_2_label,
+        title_add=title_add,
+        rasterize_scatters=rasterize_scatters,
+        show_legend=False,
+        show=False,
+        save_path=None,
+    )
     _letter(ax_d, "D")
-
-    for st in scatter_order:
-        if st == "Excluded":
-            continue  # excluded features have no test results
-        mask = status_str == st
-        if mask.sum() > 0:
-            ax_d.scatter(
-                log2fc[mask], antler_y[mask],
-                c=status_colors.get(st, "#cccccc"),
-                label=st, s=40,
-                edgecolor="white", linewidth=0.3, alpha=0.8,
-                rasterized=rasterize_scatters, zorder=5,
-            )
-
-    vx = log2fc[~np.isnan(log2fc)]
-    vy = antler_y[~np.isnan(antler_y)]
-    if len(vx) > 0:
-        xabs = float(np.max(np.abs(vx)))
-        xabs = max(xabs, eq_thr, df_thr)
-        xoff = xabs * 0.07 if xabs > 0 else 1.0
-        ax_d.set_xlim(-(xabs + xoff), xabs + xoff)
-    else:
-        xabs = max(eq_thr, df_thr, 1.0)
-        xoff = xabs * 0.07
-        ax_d.set_xlim(-(xabs + xoff), xabs + xoff)
-
-    thr_y = max(abs(np.log10(max(p_thr, 1e-300))), 0.5)
-    if len(vy) > 0:
-        ymin_d = float(vy.min())
-        ymax_d = float(vy.max())
-        yoff = (ymax_d - ymin_d) * 0.07 if (ymax_d - ymin_d) > 0 else 1.0
-        ymin_d = min(ymin_d - yoff, -thr_y * 1.1)
-        ymax_d = max(ymax_d + yoff, thr_y * 1.1)
-        ax_d.set_ylim(ymin_d, ymax_d)
-    else:
-        ax_d.set_ylim(-thr_y * 1.1, thr_y * 1.1)
-
-    ax_d.axhline(y=0,          color="lightgray", linestyle="-",  linewidth=1,     alpha=0.6, zorder=1)
-    ax_d.axvline(x=0,          color="lightgray", linestyle="-",  linewidth=1,     alpha=0.6, zorder=1)
-    ax_d.axhline(y=np.log10(p_thr),  color=_eq_col, linestyle=_eq_ls, linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax_d.axvline(x=eq_thr,     color=_eq_col, linestyle=_eq_ls, linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax_d.axvline(x=-eq_thr,    color=_eq_col, linestyle=_eq_ls, linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax_d.axhline(y=-np.log10(p_thr), color=_df_col, linestyle=_df_ls, linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax_d.axvline(x=df_thr,     color=_df_col, linestyle=_df_ls, linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax_d.axvline(x=-df_thr,    color=_df_col, linestyle=_df_ls, linewidth=_thr_lw, alpha=0.8, zorder=2)
-
-    ax_d.set_xlabel(
-        f"log\u2082 Fold Change ({c1} vs {c2})", **_ax_label_kw
-    )
-    ax_d.set_ylabel(
-        "log\u2081\u2080 Adj. p-val (equiv.) | \u2212log\u2081\u2080 Adj. p-val (diff.)",
-        **_ax_label_kw,
-    )
     ax_d.set_title("Antler's Plot: Equivalence + Difference Testing", **_subtitle_kw)
-    ax_d.grid(True, **_grid_kw)
-    ax_d.tick_params(**_tick_kw)
+    ax_d.xaxis.label.set_size(_label_fs)
+    ax_d.yaxis.label.set_size(_label_fs)
 
     # ------------------------------------------------------------------
     # Panel E: MA plot
@@ -453,11 +384,11 @@ def plot_summary(
     ax_e.axhline(y=eq_thr,  color=_eq_col, linestyle=_eq_ls, linewidth=_thr_lw, alpha=0.8, zorder=2)
     ax_e.axhline(y=-eq_thr, color=_eq_col, linestyle=_eq_ls, linewidth=_thr_lw, alpha=0.8, zorder=2)
 
-    ax_e.set_xlabel(f"Average Expression ({c1} & {c2})", **_ax_label_kw)
-    ax_e.set_ylabel(f"log\u2082 Fold Change ({c1} vs {c2})", **_ax_label_kw)
+    style_ax(ax_e, pc, xlabel=f"Average Expression ({c1} & {c2})",
+             ylabel=f"log\u2082 Fold Change ({c1} vs {c2})")
+    ax_e.xaxis.label.set_size(_label_fs)
+    ax_e.yaxis.label.set_size(_label_fs)
     ax_e.set_title("MA Plot: Mean Expression vs Fold Change", **_subtitle_kw)
-    ax_e.grid(True, **_grid_kw)
-    ax_e.tick_params(**_tick_kw)
 
     # ------------------------------------------------------------------
     # Panel F: status counts bar chart
@@ -476,12 +407,10 @@ def plot_summary(
     ax_f.barh(
         y_pos, bar_counts,
         color=bar_colors, alpha=0.9,
-        edgecolor="black", linewidth=0.8, height=0.6,
+        edgecolor=pc.spine_color, linewidth=0.8, height=0.6,
     )
     ax_f.set_yticks(y_pos)
     ax_f.set_yticklabels(bar_order)
-    ax_f.set_xlabel("Count", **_ax_label_kw)
-
     max_count = max(bar_counts) if bar_counts else 1
     for i, cnt in enumerate(bar_counts):
         if cnt > 0:
@@ -489,28 +418,31 @@ def plot_summary(
                 cnt + max_count * 0.02, i,
                 f"{cnt:,}",
                 va="center", ha="left",
-                fontsize=_tick_kw["labelsize"],
+                fontsize=_tick_fs,
             )
     ax_f.set_xlim(right=max_count * 1.25)
-    ax_f.grid(axis="x", **_grid_kw)
+    style_ax(ax_f, pc, xlabel="Count")
+    ax_f.xaxis.label.set_size(_label_fs)
     ax_f.set_title("Category Counts", **_subtitle_kw)
-    ax_f.tick_params(**_tick_kw)
     ax_f.invert_yaxis()
 
     # ------------------------------------------------------------------
     # Panel G: exclusion matrix
     # ------------------------------------------------------------------
     ax_g = fig.add_subplot(gs[2, 2])
+    style_ax(ax_g, pc, xlabel=f"{c2} Status", ylabel=f"{c1} Status")
+    ax_g.xaxis.label.set_size(_label_fs)
+    ax_g.yaxis.label.set_size(_label_fs)
     _letter(ax_g, "G")
 
     cats = ["Retained", "Missing", "Filtered"]
-    # Map cv status codes to matrix indices via: 1->0, 0->1, -1->2  (i.e. 1 - code)
     s1_idx = np.clip(1 - s1_cv, 0, 2)
     s2_idx = np.clip(1 - s2_cv, 0, 2)
     matrix = np.zeros((3, 3), dtype=int)
     np.add.at(matrix, (s1_idx, s2_idx), 1)
 
-    ax_g.imshow(matrix, cmap=pc.count_cmap, aspect="auto", alpha=0.8)
+    ax_g.grid(False)
+    ax_g.imshow(matrix, cmap=pc.count_cmap, aspect="auto", alpha=0.8, interpolation="nearest")
     max_val = int(matrix.max()) or 1
     for ri in range(3):
         for ci in range(3):
@@ -520,16 +452,12 @@ def plot_summary(
                 ci, ri, f"{val:,}",
                 ha="center", va="center",
                 color=txt_col, fontweight="bold",
-                fontsize=_tick_kw["labelsize"],
+                fontsize=_tick_fs,
             )
     ax_g.set_xticks(range(3))
     ax_g.set_yticks(range(3))
     ax_g.set_xticklabels(cats)
     ax_g.set_yticklabels(cats)
-    ax_g.tick_params(axis="x", labelsize=_tick_kw["labelsize"], pad=_tick_kw["pad"])
-    ax_g.tick_params(axis="y", labelsize=_tick_kw["labelsize"], pad=_tick_kw["pad"])
-    ax_g.set_xlabel(f"{c2} Status", **_ax_label_kw)
-    ax_g.set_ylabel(f"{c1} Status", **_ax_label_kw)
     ax_g.set_title("Exclusion Matrix", **_subtitle_kw)
     for spine in ax_g.spines.values():
         spine.set_visible(False)
@@ -559,14 +487,14 @@ def plot_summary(
                 rasterized=True,
             )
             cb = fig.colorbar(hb, ax=ax_h, shrink=0.7, pad=0.04)
-            cb.set_label("Count", fontsize=_tick_kw["labelsize"])
-            cb.ax.tick_params(labelsize=_tick_kw["labelsize"])
+            cb.set_label("Count", fontsize=_tick_fs)
+            cb.ax.tick_params(labelsize=_tick_fs)
             ax_h.set_xlim(0, n1_unique.max() + 1)
             ax_h.set_ylim(0, n2_unique.max() + 1)
-            ax_h.set_xlabel(f"N\u2081 ({c1} Samples)", **_ax_label_kw)
-            ax_h.set_ylabel(f"N\u2082 ({c2} Samples)", **_ax_label_kw)
-            ax_h.grid(True, **_grid_kw)
-            ax_h.tick_params(**_tick_kw)
+            style_ax(ax_h, pc, xlabel=f"N\u2081 ({c1} Samples)",
+                     ylabel=f"N\u2082 ({c2} Samples)")
+            ax_h.xaxis.label.set_size(_label_fs)
+            ax_h.yaxis.label.set_size(_label_fs)
         else:
             # Fixed sample sizes: annotated summary avoids a degenerate single-cell hexbin
             n1_val = int(n1_unique[0])
@@ -630,19 +558,20 @@ def plot_summary(
     lgd = ax_lgd.legend(
         handles=legend_handles,
         loc="upper left",
-        fontsize=legend_fontsize - 1,
-        frameon=True,
-        fancybox=True,
-        shadow=True,
-        framealpha=0.95,
-        title=r"$\mathbf{Legend}$",
-        title_fontsize=legend_fontsize,
+        bbox_to_anchor=(-0.12, 1.02),
+        fontsize=_tick_fs,
+        frameon=pc.legend_frameon,
+        title="Legend",
+        title_fontsize=_label_fs,
         handlelength=2.0,
         handletextpad=0.4,
-        columnspacing=0.4,
-        labelspacing=0.3,
-        borderpad=0.6,
+        labelspacing=0.2,
+        borderpad=0.1,
+        borderaxespad=0.0,
     )
+    for text in lgd.get_texts():
+        text.set_color(pc.label_color)
+    lgd.get_title().set_color(pc.label_color)
     lgd.get_title().set_position((0, 0))
     ax_lgd.axis("off")
 
@@ -704,7 +633,7 @@ def plot_summary(
         title_str,
         fontsize=title_fontsize,
         fontweight="bold",
-        color="black",
+        color=pc.title_color,
         y=0.96,
     )
 

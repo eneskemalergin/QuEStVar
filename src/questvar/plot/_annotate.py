@@ -37,12 +37,22 @@ def annotate_features(
         mask = np.array([lab in id_set for lab in labels])
     elif top_n is not None and top_n > 0:
         sel: list[int] = []
-        for code in (-1, 0, 1):
-            idx = np.where(status == code)[0]
-            if len(idx) == 0:
+        up_idx = np.where((status == -1) & (log2fc > 0))[0]
+        dn_idx = np.where((status == -1) & (log2fc <= 0))[0]
+        eq_idx = np.where(status == 1)[0]
+        un_idx = np.where(status == 0)[0]
+        # Pick top-n from each interesting category, only 1 from unexplained.
+        # Filter out NaN/Inf values that would corrupt argsort ordering.
+        for group_idx, n_pick in [(eq_idx, top_n), (up_idx, top_n),
+                                   (dn_idx, top_n), (un_idx, 1)]:
+            if len(group_idx) == 0:
                 continue
-            order = np.argsort(np.abs(log10_adjp[idx]))[::-1]
-            sel.extend(idx[order[:top_n]].tolist())
+            valid = np.isfinite(log10_adjp[group_idx])
+            if not valid.any():
+                continue
+            group_valid = group_idx[valid]
+            order = np.argsort(np.abs(log10_adjp[group_valid]))[::-1]
+            sel.extend(group_valid[order[:n_pick]].tolist())
         mask = np.zeros(n, dtype=bool)
         mask[sel] = True
 
@@ -154,24 +164,4 @@ def annotate_features(
     return annotations
 
 
-def annotate_proteins(
-    ax: Any,
-    log2fc: np.ndarray,
-    log10_adjp: np.ndarray,
-    status: np.ndarray,
-    labels: list[str],
-    *,
-    protein_ids: list[str] | None = None,
-    top_n: int | None = None,
-    pc: Any = None,
-) -> list:
-    return annotate_features(
-        ax,
-        log2fc,
-        log10_adjp,
-        status,
-        labels,
-        feature_ids=protein_ids,
-        top_n=top_n,
-        pc=pc,
-    )
+

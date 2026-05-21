@@ -279,6 +279,15 @@ def _cmd_power(args: argparse.Namespace) -> None:
         overrides["cv_thr_grid"] = (float(overrides["cv_thr"]),)
 
     cfg = cfg.replace(**overrides)
+    from dataclasses import replace as _replace
+
+    cfg = _replace(
+        cfg,
+        n_reps=cfg.n_reps_grid[0],
+        eq_thr=cfg.eq_boundaries[0],
+        cv_mean=cfg.cv_mean_grid[0],
+        cv_thr=cfg.cv_thr_grid[0],
+    )
     kw = _power_kwargs_from_config(cfg)
 
     results = run_power_analysis(**kw)

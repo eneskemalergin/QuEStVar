@@ -45,11 +45,21 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from questvar.plot._config import PlotConfig
+from questvar.plot._helpers import finalize_plot, style_ax
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
     from questvar._api import PowerResults
+
+
+def _power_from_sei(
+    sei: float, target_sei_val: float, cv_mean_val: float,
+) -> float:
+    """Apply the same power formula as _summarize_design_grid."""
+    sei_ceiling = 1.0 - cv_mean_val
+    effective_target = min(target_sei_val, sei_ceiling)
+    return min(1.0, 1.0 - max(0.0, effective_target - sei))
 
 
 def plot_power(
@@ -58,8 +68,11 @@ def plot_power(
     title: str | None = None,
     n_reps: Sequence[int] | None = None,
     ci: float | None = None,
+    ci_method: str = "quantile",
     config: PlotConfig | None = None,
+    figsize: tuple[float, float] | None = None,
     save_path: str | Path | None = None,
+    show: bool = False,
 ) -> Figure:
     """Line-plot of power vs equivalence boundary with a CV distribution panel.
 
@@ -74,9 +87,14 @@ def plot_power(
         Subset of replicate counts to display. ``None`` shows all n_reps
         found in the results.
     ci:
-        Half-width of the confidence band expressed as a multiple of the
-        per-design-point standard error. Overrides ``PlotConfig.ci_multiplier``
-        when supplied.
+        Multiplier for the confidence band:
+        - ``ci_method="se"``: half-width as multiple of the standard error
+          of the mean.  Overrides ``PlotConfig.ci_multiplier``.
+        - ``ci_method="quantile"``: ``ci=0.90`` means 5th-95th percentile
+          band, ``ci=0.80`` means 10th-90th, etc.  Default 0.90.
+    ci_method:
+        ``"quantile"`` (default) shades the ``ci``-level percentile range
+        of per-iteration SEI values.  ``"se"`` shades ``mean +/- ci * SE``.
     config:
         Visual design configuration. Defaults to :class:`PlotConfig` with
         the built-in transparent settings.
@@ -99,12 +117,23 @@ def plot_power(
     from matplotlib.transforms import blended_transform_factory, offset_copy
 
     pc = config or PlotConfig()
-    ci_mult = ci if ci is not None else pc.ci_multiplier
-    if ci_mult < 0:
-        raise ValueError(f"Parameter 'ci' must be >= 0, got {ci_mult}")
+
+    if ci_method not in ("quantile", "se"):
+        raise ValueError(
+            f"Parameter 'ci_method' must be 'quantile' or 'se', got {ci_method!r}."
+        )
+    if ci_method == "se":
+        ci_mult = ci if ci is not None else pc.ci_multiplier
+        if ci_mult < 0:
+            raise ValueError(f"Parameter 'ci' must be >= 0, got {ci_mult}")
+    else:
+        ci_level = ci if ci is not None else 0.90
+        if not 0 < ci_level < 1:
+            raise ValueError(f"Parameter 'ci' must be in (0, 1) for ci_method='quantile', got {ci_level}")
 
     # ------------------------------------------------------------------
-    # Extract lines: n_reps -> [(eq_thr, power, power_se), ...]
+    # Extract lines: n_reps -> [(eq_thr, power, lo, hi), ...]
+    # where lo/hi define the shading band.
     # ------------------------------------------------------------------
     joint_rows = [r for r in results.design_grid if r["parameter"] == "eq_thr_n_reps"]
     eq_rows    = [r for r in results.design_grid if r["parameter"] == "eq_thr"]
@@ -119,16 +148,31 @@ def plot_power(
     available_n_reps = sorted({int(r["n_reps"]) for r in source_rows})
     selected_n_reps  = [nr for nr in available_n_reps if n_reps is None or nr in n_reps]
 
-    lines: dict[int, tuple[list[float], list[float], list[float]]] = {}
+    lines: dict[int, tuple[list[float], list[float], list[float], list[float]]] = {}
     for nr in selected_n_reps:
-        pts = sorted(
-            [(r["eq_thr"], r["power"], r.get("power_se", 0.0))
-             for r in source_rows if int(r["n_reps"]) == nr],
-            key=lambda t: t[0],
-        )
+        pts = []
+        for r in source_rows:
+            if int(r["n_reps"]) != nr:
+                continue
+            if ci_method == "quantile":
+                target_sei_val = float(r.get("target_sei", 0.80))
+                cv_mean_val = float(r.get("cv_mean", 0.20))
+                sei_q05 = r.get("sei_q05")
+                sei_q95 = r.get("sei_q95")
+                if sei_q05 is not None and sei_q95 is not None:
+                    lo = _power_from_sei(float(sei_q05), target_sei_val, cv_mean_val)
+                    hi = _power_from_sei(float(sei_q95), target_sei_val, cv_mean_val)
+                else:
+                    lo = hi = r["power"]
+            else:
+                err = r.get("power_se", 0.0)
+                lo = max(0.0, r["power"] - err * ci_mult)
+                hi = min(1.0, r["power"] + err * ci_mult)
+            pts.append((r["eq_thr"], r["power"], lo, hi))
+        pts.sort(key=lambda t: t[0])
         if pts:
-            xs, ys, es = zip(*pts, strict=True)
-            lines[nr] = (list(xs), list(ys), list(es))
+            xs, ys, lo_vals, hi_vals = zip(*pts, strict=True)
+            lines[nr] = (list(xs), list(ys), list(lo_vals), list(hi_vals))
 
     if not lines:
         raise ValueError(
@@ -163,7 +207,7 @@ def plot_power(
     # ------------------------------------------------------------------
     # Build figure - 1 row x 2 cols; annotation via fig.text
     # ------------------------------------------------------------------
-    fig = plt.figure(figsize=pc.figsize, facecolor=pc.fig_facecolor)
+    fig = plt.figure(figsize=figsize or pc.figsize, facecolor=pc.fig_facecolor)
     gs  = GridSpec(
         1, 2,
         figure=fig,
@@ -176,34 +220,6 @@ def plot_power(
     # Reserve headroom for title + annotation (keeps axes from crowding the top)
     fig.subplots_adjust(top=pc.top_margin)
 
-    # ------------------------------------------------------------------
-    # Shared axis styler
-    # ------------------------------------------------------------------
-    def _style(ax: Any, xlabel: str = "", ylabel: str = "", ylabel_right: bool = False) -> None:
-        ax.set_facecolor(pc.ax_facecolor)
-        ax.spines["top"].set_visible(False)
-        if ylabel_right:
-            ax.spines["left"].set_visible(False)
-            ax.spines["right"].set_edgecolor(pc.spine_color)
-        else:
-            ax.spines["right"].set_visible(False)
-            ax.spines["left"].set_edgecolor(pc.spine_color)
-        ax.spines["bottom"].set_edgecolor(pc.spine_color)
-        ax.tick_params(colors=pc.tick_color, labelsize=pc.tick_fontsize, length=3, width=0.8)
-        if xlabel:
-            ax.set_xlabel(xlabel, color=pc.label_color, fontsize=pc.label_fontsize, labelpad=5)
-        if ylabel:
-            ax.set_ylabel(ylabel, color=pc.label_color, fontsize=pc.label_fontsize, labelpad=5)
-        if pc.grid:
-            ax.grid(
-                True,
-                color=pc.grid_color,
-                alpha=pc.grid_alpha,
-                linestyle=pc.grid_linestyle,
-                linewidth=pc.grid_linewidth,
-                zorder=0,
-            )
-            ax.set_axisbelow(True)
 
     # ------------------------------------------------------------------
     # Main panel: one line per n_reps
@@ -220,7 +236,7 @@ def plot_power(
         ]
 
     for idx, nr in enumerate(sorted(lines)):
-        xvals, yvals, ervals = lines[nr]
+        xvals, yvals, los, his = lines[nr]
         color = _line_colors[idx]
 
         ax_main.plot(
@@ -232,9 +248,7 @@ def plot_power(
             label=str(nr),
             zorder=3,
         )
-        lo = [max(0.0, y - e * ci_mult) for y, e in zip(yvals, ervals, strict=True)]
-        hi = [min(1.0, y + e * ci_mult) for y, e in zip(yvals, ervals, strict=True)]
-        ax_main.fill_between(xvals, lo, hi, color=color, alpha=pc.ci_alpha, zorder=2)
+        ax_main.fill_between(xvals, los, his, color=color, alpha=pc.ci_alpha, zorder=2)
 
     # Ideal reference line at SEI = 1 (power ceiling)
     ax_main.axhline(
@@ -304,7 +318,7 @@ def plot_power(
         title=_legend_title,
         title_fontsize=pc.legend_fontsize,
     )
-    _style(ax_main, xlabel="Equivalence boundary (log\u2082 FC)", ylabel="Power")
+    style_ax(ax_main, pc, xlabel="Equivalence boundary (log\u2082 FC)", ylabel="Power")
 
     # Title - left-aligned
     ax_main.set_title(
@@ -363,7 +377,7 @@ def plot_power(
         loc="center",
         pad=6,
     )
-    _style(ax_cv, ylabel="CV (ratio)", ylabel_right=True)
+    style_ax(ax_cv, pc, ylabel="CV (ratio)", ylabel_right=True)
 
     # Stat text centered below the CV panel (outside the axes frame)
     cv_mean_val   = float(np.mean(cv_sample))
@@ -407,17 +421,9 @@ def plot_power(
     )
 
     # ------------------------------------------------------------------
-    # Save
+    # Save / show
     # ------------------------------------------------------------------
-    if save_path is not None:
-        save_path = Path(save_path)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(
-            save_path,
-            dpi=pc.dpi,
-            bbox_inches="tight",
-            facecolor=fig.get_facecolor(),
-        )
+    finalize_plot(fig, save_path=save_path, dpi=pc.dpi, show=show)
 
     # Expose axes as named attributes so callers can make post-hoc adjustments
     fig.ax_main = ax_main  # type: ignore[attr-defined]

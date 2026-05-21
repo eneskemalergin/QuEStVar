@@ -112,7 +112,7 @@ def run_power_analysis(
     tasks = [(point, config.to_dict()) for point in design_points]
 
     if n_jobs is None or n_jobs < 1:
-        n_jobs = mp.cpu_count()
+        n_jobs = max(1, mp.cpu_count() // 2)
     if n_jobs == 1:
         batches = [_simulate_design_point(t) for t in tasks]
     else:
@@ -294,6 +294,17 @@ def _build_design_points(
     config: PowerConfig,
     cv_thr_list: list[float],
 ) -> list[dict[str, float | int | str]]:
+    # Derive every scalar from its grid so design points are internally
+    # consistent regardless of how PowerConfig was constructed.
+    from dataclasses import replace
+
+    config = replace(
+        config,
+        n_reps=config.n_reps_grid[0],
+        eq_thr=config.eq_boundaries[0],
+        cv_mean=config.cv_mean_grid[0],
+        cv_thr=config.cv_thr_grid[0],
+    )
     design_points: list[dict[str, float | int | str]] = []
     for eq_thr in config.eq_boundaries:
         design_points.append(

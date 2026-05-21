@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from questvar.plot._annotate import annotate_features
 from questvar.plot._config import PlotConfig
-from questvar.plot._helpers import draw_thresholds, finalize_plot
+from questvar.plot._helpers import draw_thresholds, finalize_plot, style_ax
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -19,6 +19,7 @@ def antlers(
     results: TestResults,
     *,
     config: PlotConfig | None = None,
+    ax: Any | None = None,
     cond_1_label: str = "Condition 1",
     cond_2_label: str = "Condition 2",
     title_add: str = "",
@@ -28,6 +29,7 @@ def antlers(
     top_n: int | None = None,
     label_col: str = "feature_id",
     rasterize_scatters: bool = True,
+    show_legend: bool = True,
     show: bool = False,
     save_path: str | Path | None = None,
 ) -> Figure:
@@ -89,10 +91,15 @@ def antlers(
     eq_adjp_arr = data["eq_adjp"].to_numpy().astype(float)
     status_int = data["status"].to_numpy().astype(int)
 
-    # Build signed log10 y-axis
-    with np.errstate(divide="ignore", invalid="ignore"):
-        _log_eq = np.where(eq_adjp_arr > 0, np.log10(eq_adjp_arr), np.nan)
-        _log_df = np.where(df_adjp > 0, -np.log10(df_adjp), np.nan)
+    # Build signed log10 y-axis.
+    # P-values at exactly zero would produce +inf in -log10 and break
+    # downstream sorting.  If the input data is realistic, no p-value
+    # should reach true zero, but guard against degenerate input by
+    # replacing exactly-zero p-values with the next representable value.
+    _safe_p = np.where(df_adjp <= 0, np.nextafter(0, 1, dtype=np.float64), df_adjp)
+    _safe_q = np.where(eq_adjp_arr <= 0, np.nextafter(0, 1, dtype=np.float64), eq_adjp_arr)
+    _log_eq = np.log10(_safe_q)
+    _log_df = -np.log10(_safe_p)
     antler_y = np.where(np.abs(log2fc) < eq_thr, _log_eq, _log_df)
 
     # String status labels
@@ -108,11 +115,16 @@ def antlers(
     label_arr = data[label_col].to_numpy() if label_col in data.columns else np.full(len(data), "")
 
     # Figure
-    fig, ax = plt.subplots(figsize=figsize, facecolor=pc.fig_facecolor)
+    is_external_ax = ax is not None
+    if not is_external_ax:
+        fig, ax = plt.subplots(figsize=figsize, facecolor=pc.fig_facecolor)
+        fig.ax_main = ax  # type: ignore[attr-defined]
+    else:
+        fig = ax.figure  # type: ignore[attr-defined]
     ax.set_facecolor(pc.ax_facecolor)
 
-    # Scatter order
-    scatter_order = ["Unexplained", "Downregulated", "Upregulated", "Equivalent"]
+    # Scatter order from PlotConfig
+    scatter_order = [s for s in pc.status_order if s != "Excluded"]
 
     for st in scatter_order:
         mask = status_str == st
@@ -159,30 +171,27 @@ def antlers(
         fontsize=pc.label_fontsize + 4, color=pc.label_color,
     )
 
-    title = f"Antler\u2019s Plot: {cond_str}" if cond_str else "Antler\u2019s Plot"
-    if title_add:
-        title += f"\n{title_add}"
-    ax.set_title(title, fontsize=pc.title_fontsize + 2, fontweight=pc.title_fontweight,
-                 color=pc.title_color, loc=pc.title_loc, pad=15)
+    if show_legend:
+        title = f"Antler\u2019s Plot: {cond_str}" if cond_str else "Antler\u2019s Plot"
+        if title_add:
+            title += f"\n{title_add}"
+        ax.set_title(title, fontsize=pc.title_fontsize + 2, fontweight=pc.title_fontweight,
+                     color=pc.title_color, loc=pc.title_loc, pad=15)
 
-    # Grid
-    ax.grid(True, alpha=0.3, linestyle=pc.grid_linestyle, linewidth=pc.grid_linewidth,
-            color=pc.grid_color)
-    ax.tick_params(colors=pc.tick_color, labelsize=pc.tick_fontsize + 1)
-    for spine in ax.spines.values():
-        spine.set_edgecolor(pc.spine_color)
+    style_ax(ax, pc)
 
-    # Legend outside the plot
-    handles, labels = ax.get_legend_handles_labels()
-    if handles:
-        legend = ax.legend(
-            fontsize=pc.legend_fontsize + 2,
-            frameon=True, fancybox=False, shadow=False, framealpha=0.9,
-            loc="upper left", bbox_to_anchor=(1.02, 1.02),
-            title="Status",
-            title_fontsize=pc.legend_fontsize + 3,
-        )
-        legend.get_title().set_fontweight("bold")
+    # Legend (skipped when embedded in summary plot)
+    if show_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            legend = ax.legend(
+                fontsize=pc.legend_fontsize + 2,
+                frameon=pc.legend_frameon, fancybox=False, shadow=False, framealpha=0.9,
+                loc="upper left", bbox_to_anchor=(1.02, 1.02),
+                title="Status",
+                title_fontsize=pc.legend_fontsize + 3,
+            )
+            legend.get_title().set_fontweight("bold")
 
     # Annotations
     if selected_feature_ids is not None or top_n is not None:
@@ -193,9 +202,7 @@ def antlers(
             pc=pc,
         )
 
-    # Adjust layout for legend
-    plt.subplots_adjust(right=0.82)
-
-    finalize_plot(fig, save_path=save_path, dpi=pc.dpi, show=show)
-    fig.ax_main = ax  # type: ignore[attr-defined]
+    if not is_external_ax:
+        plt.subplots_adjust(right=0.82)
+        finalize_plot(fig, save_path=save_path, dpi=pc.dpi, show=show)
     return fig

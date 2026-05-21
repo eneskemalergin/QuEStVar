@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +10,40 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
     from questvar.plot._config import PlotConfig
+
+
+def style_ax(
+    ax: Any,
+    pc: PlotConfig,
+    *,
+    xlabel: str = "",
+    ylabel: str = "",
+    ylabel_right: bool = False,
+) -> None:
+    """Apply shared axis styling from a PlotConfig to a matplotlib Axes.
+
+    Sets face colour, spine colours, tick parameters, grid, and axis labels.
+    Call this on every axis after drawing data.  It never modifies data-ink
+    (e.g. never sets axis limits).
+    """
+    ax.set_facecolor(pc.ax_facecolor)
+    ax.spines["top"].set_visible(False)
+    if ylabel_right:
+        ax.spines["left"].set_visible(False)
+        ax.spines["right"].set_edgecolor(pc.spine_color)
+    else:
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_edgecolor(pc.spine_color)
+    ax.spines["bottom"].set_edgecolor(pc.spine_color)
+    ax.tick_params(colors=pc.tick_color, labelsize=pc.tick_fontsize, length=3, width=0.8)
+    if xlabel:
+        ax.set_xlabel(xlabel, color=pc.label_color, fontsize=pc.label_fontsize, labelpad=5)
+    if ylabel:
+        ax.set_ylabel(ylabel, color=pc.label_color, fontsize=pc.label_fontsize, labelpad=5)
+    if pc.grid:
+        ax.grid(True, color=pc.grid_color, alpha=pc.grid_alpha,
+                linestyle=pc.grid_linestyle, linewidth=pc.grid_linewidth, zorder=0)
+        ax.set_axisbelow(True)
 
 
 def draw_thresholds(
@@ -46,8 +81,8 @@ def draw_thresholds(
     _fs = pc.threshold_label_fontsize
 
     if not hide_zero_lines:
-        ax.axhline(y=0, color="lightgray", linestyle="-", linewidth=1, alpha=0.6, zorder=1)
-        ax.axvline(x=0, color="lightgray", linestyle="-", linewidth=1, alpha=0.6, zorder=1)
+        ax.axhline(y=0, color=pc.spine_color, linestyle="-", linewidth=0.8, alpha=0.6, zorder=1)
+        ax.axvline(x=0, color=pc.spine_color, linestyle="-", linewidth=0.8, alpha=0.6, zorder=1)
 
     ax.axhline(y=np.log10(p_thr), color=_eq_col, linestyle=pc.eq_threshold_linestyle,
                linewidth=_thr_lw, alpha=0.8, zorder=2)
@@ -102,6 +137,7 @@ def finalize_plot(
     dpi: int = 150,
     transparent: bool = False,
     show: bool = False,
+    formats: Sequence[str] | None = None,
 ) -> None:
     """Save and/or display a matplotlib figure.
 
@@ -118,17 +154,28 @@ def finalize_plot(
         Whether to use a transparent background (instead of the figure facecolour).
     show : bool
         Whether to call ``plt.show()``.
+    formats : list of str, optional
+        Additional formats for multi-format export (e.g. ``["png", "svg"]``).
+        Each format is saved alongside ``save_path`` using the same stem.
+        Ignored when ``save_path`` is ``None``.
     """
     if save_path is not None:
-        save_path = Path(save_path)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(
-            save_path,
-            dpi=dpi,
-            bbox_inches="tight",
-            facecolor=None if transparent else fig.get_facecolor(),
-        )
+        _do_save(fig, Path(save_path), dpi, transparent)
+        if formats:
+            stem = Path(save_path).with_suffix("")
+            for fmt in formats:
+                _do_save(fig, stem.with_suffix(f".{fmt}"), dpi, transparent)
     if show:
         import matplotlib.pyplot as plt
 
         plt.show()
+
+
+def _do_save(fig: Figure, path: Path, dpi: int, transparent: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(
+        path,
+        dpi=dpi,
+        bbox_inches="tight",
+        facecolor=None if transparent else fig.get_facecolor(),
+    )

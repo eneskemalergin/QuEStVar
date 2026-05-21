@@ -362,7 +362,7 @@ class TestPlotPower:
         results = _make_power_results(
             [_make_power_row(parameter="eq_thr", eq_thr=0.3, n_reps=5, power=0.8)]
         )
-        with pytest.raises(ValueError, match="Parameter 'ci' must be >= 0"):
+        with pytest.raises(ValueError, match="Parameter 'ci' must be in [(]0, 1[)]"):
             results.plot(ci=-0.5)
 
     def test_invalid_kind(self):

@@ -315,13 +315,13 @@ class TestCliPower:
 
         results = PowerResults.load(str(out))
 
-        assert results.config["eq_thr"] == 0.6
+        assert results.config["eq_thr"] == 0.4  # grid overrides scalar
         assert results.config["eq_boundaries"] == [0.4, 0.8]
-        assert results.config["n_reps"] == 5
+        assert results.config["n_reps"] == 4
         assert results.config["n_reps_grid"] == [4, 6]
-        assert results.config["cv_mean"] == 0.25
+        assert results.config["cv_mean"] == 0.15  # grid overrides scalar
         assert results.config["cv_mean_grid"] == [0.15, 0.35]
-        assert results.config["cv_thr"] == 1.3
+        assert results.config["cv_thr"] == 0.8  # grid overrides scalar
         assert results.config["cv_thr_grid"] == [0.8, 1.6]
         assert results.config["n_prts_grid"] == [100, 150]
 
