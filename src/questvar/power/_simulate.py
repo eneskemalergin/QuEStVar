@@ -24,6 +24,13 @@ def simulate_data(
     (columns n_reps // 2 onward). A value of 0.0 (default) simulates
     pure-equivalence data where both conditions share the same mean.
     Positive delta shifts condition 2 upward in log2 space.
+
+    Seed policy
+    -----------
+    This function uses ``numpy.random.default_rng(seed)`` which creates a
+    fresh local ``Generator``.  It never touches NumPy's global RNG state.
+    Passing the same ``seed`` always produces identical data on any platform
+    within the same NumPy major version.
     """
     rng = np.random.default_rng(seed)
 

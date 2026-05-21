@@ -157,6 +157,20 @@ class TestTestConfig:
         assert updated.cv_thr == 0.3
         assert updated.df_thr == 1.0  # unchanged
 
+    def test_repr_produces_reproducible_output(self):
+        cfg = TestConfig(cv_thr=0.2, p_thr=0.01, df_thr=2.0, eq_thr=0.8, correction="bonferroni")
+        r = repr(cfg)
+        assert r.startswith("questvar._config.TestConfig(")
+        assert "cv_thr=0.2" in r
+        assert "correction='bonferroni'" in r
+
+    def test_str_contains_all_fields(self):
+        cfg = TestConfig(cv_thr=0.2, correction="fdr", is_paired=True)
+        s = str(cfg)
+        assert "cv_thr=0.2" in s
+        assert "correction='fdr'" in s
+        assert "is_paired=True" in s
+
     @settings(deadline=None, max_examples=40)
     @given(valid_testconfig_kwargs())
     def test_roundtrip_properties(self, kwargs):
@@ -236,6 +250,23 @@ class TestPowerConfig:
         cfg.to_yaml(str(path))
         loaded = PowerConfig.from_yaml(str(path))
         assert loaded == cfg
+
+    def test_repr_produces_reproducible_output(self):
+        cfg = PowerConfig(
+            n_prts=1000, n_reps=8, eq_thr=0.5,
+            random_seed=42, n_jobs=4,
+        )
+        r = repr(cfg)
+        assert r.startswith("questvar._config.PowerConfig(")
+        assert "random_seed=42" in r
+        assert "n_jobs=4" in r
+        assert "n_prts=1000" in r
+
+    def test_str_contains_all_fields(self):
+        cfg = PowerConfig(random_seed=42, n_jobs=2)
+        s = str(cfg)
+        assert "random_seed=42" in s
+        assert "n_jobs=2" in s
 
     @settings(deadline=None, max_examples=30)
     @given(valid_powerconfig_kwargs())

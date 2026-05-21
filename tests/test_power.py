@@ -170,6 +170,42 @@ class TestPowerAnalysis:
                 else:
                     assert left_value == right_value
 
+    def test_random_seed_determinism_via_repeated_call(self):
+        left = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=3,
+            random_seed=42,
+            n_jobs=1,
+        )
+        right = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=200,
+            n_iterations=3,
+            random_seed=42,
+            n_jobs=1,
+        )
+        assert left.design_grid == right.design_grid
+        assert left.run_metrics == right.run_metrics
+
+    def test_package_does_not_mutate_global_numpy_rng(self):
+        state_before = np.random.get_state()[1].copy()
+        _ = run_power_analysis(
+            eq_boundaries=np.array([0.5]),
+            n_reps_list=[5],
+            cv_mean_list=[0.20],
+            n_prts=100,
+            n_iterations=2,
+            n_jobs=1,
+            random_seed=42,
+        )
+        state_after = np.random.get_state()[1]
+        assert np.array_equal(state_before, state_after)
+
     def test_summary_groups_large_design_grids(self):
         design_grid = [
             {

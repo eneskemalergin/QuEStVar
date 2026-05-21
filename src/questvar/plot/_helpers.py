@@ -72,7 +72,7 @@ def draw_thresholds(
         y_bot = ylim[0] + y_range * 0.01
         x_right = xlim[1] - x_range * 0.01
 
-        # Vertical FC threshold labels — diff at top (rotated), eq at bottom (rotated)
+        # Vertical FC threshold labels: diff at top (rotated), eq at bottom (rotated)
         ax.text(df_thr, y_top, f"diff: \u00b1{df_thr}", rotation=90,
                 ha="left", va="top", fontsize=_fs,
                 color=_df_col, fontweight="bold", alpha=0.8)
@@ -86,7 +86,7 @@ def draw_thresholds(
                 ha="right", va="bottom", fontsize=_fs,
                 color=_eq_col, fontweight="bold", alpha=0.8)
 
-        # Horizontal p-value threshold labels — at the right edge
+        # Horizontal p-value threshold labels: at the right edge
         ax.text(x_right, np.log10(p_thr), f"eq: p\u2264{p_thr}",
                 ha="right", va="bottom", fontsize=_fs,
                 color=_eq_col, fontweight="bold", alpha=0.8)

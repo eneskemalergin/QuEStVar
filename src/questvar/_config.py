@@ -69,6 +69,23 @@ class TestConfig(_ConfigMixin):
                 f"Valid values: {sorted(VALID_CORRECTIONS, key=str)}"
             )
 
+    def __repr__(self) -> str:
+        fields = ", ".join(
+            f"{field.name}={getattr(self, field.name)!r}"
+            for field in self.__dataclass_fields__.values()
+        )
+        return f"questvar._config.TestConfig({fields})"
+
+    def __str__(self) -> str:
+        return (
+            f"TestConfig\n"
+            f"  cv_thr={self.cv_thr}  p_thr={self.p_thr}  "
+            f"df_thr={self.df_thr}  eq_thr={self.eq_thr}\n"
+            f"  correction={self.correction!r}  "
+            f"is_log2={self.is_log2}  is_paired={self.is_paired}  "
+            f"var_equal={self.var_equal}  allow_missing={self.allow_missing}"
+        )
+
 
 @dataclass(frozen=True)
 class PowerConfig(_ConfigMixin):
@@ -94,6 +111,32 @@ class PowerConfig(_ConfigMixin):
     cv_thr_grid: tuple[float, ...] = (1.0, 1.5, 2.0)
     random_seed: int | None = None
     n_jobs: int | None = None
+
+    def __repr__(self) -> str:
+        fields = ", ".join(
+            f"{field.name}={getattr(self, field.name)!r}"
+            for field in self.__dataclass_fields__.values()
+        )
+        return f"questvar._config.PowerConfig({fields})"
+
+    def __str__(self) -> str:
+        return (
+            f"PowerConfig\n"
+            f"  n_prts={self.n_prts}  n_reps={self.n_reps}  "
+            f"cv_mean={self.cv_mean}  cv_k={self.cv_k}  cv_theta={self.cv_theta}\n"
+            f"  eq_thr={self.eq_thr}  p_thr={self.p_thr}  "
+            f"df_thr={self.df_thr}  cv_thr={self.cv_thr}\n"
+            f"  correction={self.correction!r}  "
+            f"int_mu={self.int_mu}  int_sd={self.int_sd}\n"
+            f"  n_iterations={self.n_iterations}  "
+            f"target_sei={self.target_sei}  target_power={self.target_power}\n"
+            f"  eq_boundaries={self.eq_boundaries}  "
+            f"n_reps_grid={self.n_reps_grid}  "
+            f"n_prts_grid={self.n_prts_grid}\n"
+            f"  cv_mean_grid={self.cv_mean_grid}  "
+            f"cv_thr_grid={self.cv_thr_grid}\n"
+            f"  random_seed={self.random_seed}  n_jobs={self.n_jobs}"
+        )
 
     def __post_init__(self) -> None:
         if self.df_thr <= self.eq_thr:

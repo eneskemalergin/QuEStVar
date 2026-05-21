@@ -41,8 +41,40 @@ def run_power_analysis(
 
     The simulation always uses true log2 fold-change = 0, so every simulated
     feature is truly equivalent. SEI therefore measures equivalent-feature
-    recovery directly, and `diff_rate` is interpreted as a false-differential
+    recovery directly, and ``diff_rate`` is interpreted as a false-differential
     classification rate under that null design.
+
+    Seed policy (read carefully, Monte Carlo implications below)
+    ---------------------------------------------------------------
+    Every Monte Carlo iteration within a design point receives its own
+    ``numpy.random.default_rng(seed)`` a fresh local ``Generator`` that
+    never touches NumPy's global RNG state.  The seed value depends only on
+    the iteration index and ``random_seed``:
+
+    * ``random_seed=None`` (default): seed = zero-based ``run_id``
+      (0, 1, 2, …).  **The analysis is fully deterministic even without
+      an explicit seed.**
+    * ``random_seed=<int>``: seed = ``random_seed + run_id``.
+      Any fixed integer produces bit-identical results across runs
+      (within the same NumPy major version).
+
+    **Common Random Numbers (CRN) across design points.**
+    The seed derivation does **not** incorporate the design-point identity.
+    Every design point uses the same sequence of seeds (``seed_0, seed_1,
+    …``) for its MC iterations.  This is intentional: it makes the
+    simulated data identical across design points that share the same
+    ``n_reps``, so differences in outcomes are driven purely by parameter
+    changes rather than random noise (variance reduction).  Within-design-
+    point iterations remain independent because each gets a different seed,
+    so per-design-point standard errors are valid.
+
+    **CRN limitation.**  CRN only applies when ``n_reps`` is the same
+    across the compared design points.  When ``n_reps`` differs,
+    ``simulate_data`` requests a differently-shaped array, and NumPy's
+    Ziggurat algorithm consumes the RNG stream in a shape-dependent way,
+    breaking CRN alignment.  This does **not** affect correctness (each
+    design point's Monte Carlo estimate remains valid), it simply removes
+    the variance-reduction benefit for those cross-point comparisons.
     """
     start = time.perf_counter()
     config = PowerConfig(
@@ -98,8 +130,13 @@ def run_power_analysis(
         "n_runs": len(run_metrics),
         "worker_count": n_jobs if n_jobs is not None else mp.cpu_count(),
         "seed_policy": (
-            "run_id sequence" if config.random_seed is None else f"base_seed+run_id from {config.random_seed}"
+            "CRN: every design point shares the same seed sequence  "
+            f"({'run_id' if config.random_seed is None else f'{config.random_seed}+run_id'})  "
+            "within-point iterations are independent"
         ),
+        "seed_crn": True,
+        "seed_crn_limited_to_fixed_n_reps": True,
+        "seed_within_point_independent": True,
         "base_random_seed": config.random_seed,
         "monotonicity_checks": monotonicity_checks,
         "n_converged": sum(1 for r in design_grid if r.get("converged", False)),
@@ -173,6 +210,16 @@ def _simulate_design_point(args: tuple) -> list[dict]:
     n_prts = int(point.get("n_prts", cfg.n_prts))
 
     metrics: list[dict] = []
+    # Seeding scheme (Common Random Numbers):
+    # The seed depends ONLY on run_id (and random_seed), NOT on the design
+    # point identity.  Every design point at run_id=0 uses the same seed,
+    # every point at run_id=1 uses the same seed, etc.  This gives CRN:
+    # design points with the same n_reps generate identical simulated data,
+    # so outcome differences reflect parameter changes, not random noise.
+    # Different MC iterations within a point get different seeds,
+    # making per-design-point standard errors valid.
+    # numpy.random.default_rng(seed) creates a local Generator that never
+    # touches NumPy's global RNG state.
     for run_id in range(cfg.n_iterations):
         seed = run_id if cfg.random_seed is None else cfg.random_seed + run_id
         data = simulate_data(

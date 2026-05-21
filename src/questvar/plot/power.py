@@ -152,6 +152,9 @@ def plot_power(
 
     # ------------------------------------------------------------------
     # CV distribution sample (gamma, scaled to cv_mean)
+    # Fixed seed (0) ensures the visualised CV sample is deterministic
+    # across runs.  This is purely a plotting aid, not a statistical
+    # computation, so a hardcoded seed is acceptable.
     # ------------------------------------------------------------------
     rng = np.random.default_rng(0)
     cv_raw    = rng.gamma(cv_k, cv_theta, pc.cv_sample_size).astype(float)
