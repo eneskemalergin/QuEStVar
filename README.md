@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-    <a href="https://pypi.org/project/questvar/"><img src="https://img.shields.io/pypi/v/questvar?style=for-the-badge&color=0f766e" alt="Version 0.1.0" /></a>
+    <a href="https://pypi.org/project/questvar/"><img src="https://img.shields.io/badge/version-v0.1.0-0f766e?style=for-the-badge" alt="v0.1.0" /></a>
     <a href="ref/statistical-testing-for-protein-equivalence-identifies-core-functional-modules-conserved-across-360-cancer-cell-lines.pdf"><img src="https://img.shields.io/badge/paper-linked-7c3aed?style=for-the-badge" alt="Paper" /></a>
     <a href="https://eneskemalergin.github.io/QuEStVar/"><img src="https://img.shields.io/badge/docs-site-0891b2?style=for-the-badge" alt="Documentation" /></a>
     <a href="https://github.com/eneskemalergin/QuEStVar/actions"><img src="https://img.shields.io/github/actions/workflow/status/eneskemalergin/QuEStVar/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI" alt="CI" /></a>
