@@ -1,6 +1,6 @@
 <!-- markdownlint-disable MD033 MD036 MD041 MD045 -->
 <p align="center">
-    <img src="assets/questvar.jpg" alt="QuEStVar" width="270" />
+    <img src="https://raw.githubusercontent.com/eneskemalergin/QuEStVar/main/assets/questvar.jpg" alt="QuEStVar" width="270" />
 </p>
 
 <p align="center">
@@ -66,7 +66,7 @@ print(results.summary())
 results.plot(cond_1_label="Control", cond_2_label="Treatment")
 ```
 
-![Summary plot](assets/summary_plot.png)
+![Summary plot](https://raw.githubusercontent.com/eneskemalergin/QuEStVar/main/assets/summary_plot.png)
 
 Three statuses appear. Equivalent (+1) means the TOST test is significant and |log2FC| is below the equivalence boundary. Differential (-1) means the t-test is significant and |log2FC| is above the difference boundary. Not significant (0) means neither test was decisive. Excluded features failed the CV quality filter, some were testable but very high CV, and some were untestable due to missing values or zero variance (shows the stats in panel G.)
 
