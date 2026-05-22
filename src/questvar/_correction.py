@@ -29,8 +29,7 @@ def p_adjust(
 
     if method not in VALID_METHODS:
         raise ValueError(
-            f"Unknown correction method: {method!r}. "
-            f"Valid: {sorted(VALID_METHODS, key=str)}"
+            f"Unknown correction method: {method!r}. Valid: {sorted(VALID_METHODS, key=str)}"
         )
     if n <= 0:
         return p.copy()
@@ -114,7 +113,7 @@ def _qvalue_estimate(p: NDArray[np.float64]) -> float:
         return 1.0
 
     sorted_p = np.sort(p)
-    counts = m - np.searchsorted(sorted_p, lambdas, side="right")
+    counts = (m - np.searchsorted(sorted_p, lambdas, side="right")).astype(np.float64)
     pi0_lambda = counts / (m * (1.0 - lambdas))
 
     try:

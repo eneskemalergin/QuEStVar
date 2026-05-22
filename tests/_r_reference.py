@@ -9,7 +9,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-
 _SCRIPT_PATH = Path(__file__).resolve().parent / "r" / "questvar_reference.R"
 
 
@@ -27,8 +26,7 @@ def ensure_r_reference_stack() -> str:
     )
     if probe.returncode != 0:
         pytest.skip(
-            "R reference stack is unavailable: "
-            f"{probe.stderr.strip() or probe.stdout.strip()}"
+            f"R reference stack is unavailable: {probe.stderr.strip() or probe.stdout.strip()}"
         )
 
     return rscript

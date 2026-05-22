@@ -19,7 +19,7 @@ def antlers(
     results: TestResults,
     *,
     config: PlotConfig | None = None,
-    ax: Any | None = None,
+    ax: Any = None,
     cond_1_label: str = "Condition 1",
     cond_2_label: str = "Condition 2",
     title_add: str = "",
@@ -104,9 +104,11 @@ def antlers(
 
     # String status labels
     status_str = np.where(
-        status_int == 1, "Equivalent",
+        status_int == 1,
+        "Equivalent",
         np.where(
-            (status_int == -1) & (log2fc > 0), "Upregulated",
+            (status_int == -1) & (log2fc > 0),
+            "Upregulated",
             np.where((status_int == -1) & (log2fc <= 0), "Downregulated", "Unexplained"),
         ),
     )
@@ -117,10 +119,11 @@ def antlers(
     # Figure
     is_external_ax = ax is not None
     if not is_external_ax:
-        fig, ax = plt.subplots(figsize=figsize, facecolor=pc.fig_facecolor)
-        fig.ax_main = ax  # type: ignore[attr-defined]
+        fig, _ax = plt.subplots(figsize=figsize, facecolor=pc.fig_facecolor)
+        fig.ax_main = _ax  # type: ignore[attr-defined]
+        ax = _ax
     else:
-        fig = ax.figure  # type: ignore[attr-defined]
+        fig = ax.figure
     ax.set_facecolor(pc.ax_facecolor)
 
     # Scatter order from PlotConfig
@@ -130,11 +133,16 @@ def antlers(
         mask = status_str == st
         if mask.sum() > 0:
             ax.scatter(
-                log2fc[mask], antler_y[mask],
+                log2fc[mask],
+                antler_y[mask],
                 c=pc.status_colors.get(st, "#cccccc"),
-                label=st, s=45,
-                edgecolor="white", linewidth=0.3, alpha=0.85,
-                rasterized=rasterize_scatters, zorder=5,
+                label=st,
+                s=45,
+                edgecolor="white",
+                linewidth=0.3,
+                alpha=0.85,
+                rasterized=rasterize_scatters,
+                zorder=5,
             )
 
     # Axis limits with padding
@@ -164,19 +172,29 @@ def antlers(
 
     # Labels and title
     cond_str = f"{cond_1_label} vs {cond_2_label}" if cond_1_label and cond_2_label else ""
-    ax.set_xlabel(f"log\u2082 Fold Change ({cond_str})" if cond_str else "log\u2082 Fold Change",
-                  fontsize=pc.label_fontsize + 4, color=pc.label_color)
+    ax.set_xlabel(
+        f"log\u2082 Fold Change ({cond_str})" if cond_str else "log\u2082 Fold Change",
+        fontsize=pc.label_fontsize + 4,
+        color=pc.label_color,
+    )
     ax.set_ylabel(
         "log\u2081\u2080 Adj. p-val (equiv.) | \u2212log\u2081\u2080 Adj. p-val (diff.)",
-        fontsize=pc.label_fontsize + 4, color=pc.label_color,
+        fontsize=pc.label_fontsize + 4,
+        color=pc.label_color,
     )
 
     if show_legend:
         title = f"Antler\u2019s Plot: {cond_str}" if cond_str else "Antler\u2019s Plot"
         if title_add:
             title += f"\n{title_add}"
-        ax.set_title(title, fontsize=pc.title_fontsize + 2, fontweight=pc.title_fontweight,
-                     color=pc.title_color, loc=pc.title_loc, pad=15)
+        ax.set_title(
+            title,
+            fontsize=pc.title_fontsize + 2,
+            fontweight=pc.title_fontweight,
+            color=pc.title_color,
+            loc=pc.title_loc,
+            pad=15,
+        )
 
     style_ax(ax, pc)
 
@@ -186,8 +204,12 @@ def antlers(
         if handles:
             legend = ax.legend(
                 fontsize=pc.legend_fontsize + 2,
-                frameon=pc.legend_frameon, fancybox=False, shadow=False, framealpha=0.9,
-                loc="upper left", bbox_to_anchor=(1.02, 1.02),
+                frameon=pc.legend_frameon,
+                fancybox=False,
+                shadow=False,
+                framealpha=0.9,
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.02),
                 title="Status",
                 title_fontsize=pc.legend_fontsize + 3,
             )
@@ -196,7 +218,11 @@ def antlers(
     # Annotations
     if selected_feature_ids is not None or top_n is not None:
         annotate_features(
-            ax, log2fc, antler_y, status_int, label_arr.tolist(),
+            ax,
+            log2fc,
+            antler_y,
+            status_int,
+            label_arr.tolist(),
             feature_ids=selected_feature_ids,
             top_n=top_n if top_n else (pc.annotate_top_n if selected_feature_ids is None else None),
             pc=pc,

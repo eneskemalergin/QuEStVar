@@ -2,24 +2,22 @@ from __future__ import annotations
 
 import inspect
 import json
+
 import numpy as np
 import polars as pl
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 
-from questvar._api import QuestVar
-from questvar._api import PowerResults
+from questvar._api import PowerResults, QuestVar
 from questvar._api import TestResults as _TestResults
 from questvar._config import TestConfig
+from questvar._test import test as qv_test
 from questvar.power.run import run_power_analysis
-from questvar.test import test as qv_test
 
 
 def _make_proteomics_data(n_prts=100, n_reps=3):
     rng = np.random.default_rng(42)
-    data = {
-        f"sample_{i:02d}": rng.lognormal(18, 0.5, n_prts) for i in range(n_reps * 2)
-    }
+    data = {f"sample_{i:02d}": rng.lognormal(18, 0.5, n_prts) for i in range(n_reps * 2)}
     data["protein_id"] = [f"prot_{i:06d}" for i in range(n_prts)]
     return pl.DataFrame(data)
 
@@ -373,8 +371,12 @@ class TestQuestVar:
 
         assert raw_result.data["feature_id"].to_list() == [1]
         assert log_result.data["feature_id"].to_list() == [1]
-        assert raw_result.info["s1_cv_status"].to_list() == log_result.info["s1_cv_status"].to_list()
-        assert raw_result.info["s2_cv_status"].to_list() == log_result.info["s2_cv_status"].to_list()
+        assert (
+            raw_result.info["s1_cv_status"].to_list() == log_result.info["s1_cv_status"].to_list()
+        )
+        assert (
+            raw_result.info["s2_cv_status"].to_list() == log_result.info["s2_cv_status"].to_list()
+        )
         assert_allclose(raw_result.data["log2fc"].to_numpy(), log_result.data["log2fc"].to_numpy())
         assert raw_result.data["status"].to_list() == log_result.data["status"].to_list()
 
@@ -426,9 +428,7 @@ class TestValidateExtract:
         import pytest
 
         with pytest.raises(ValueError, match="must not share"):
-            qv.test(
-                df, cond_1=["sample_00", "sample_01"], cond_2=["sample_01", "sample_02"]
-            )
+            qv.test(df, cond_1=["sample_00", "sample_01"], cond_2=["sample_01", "sample_02"])
 
     def test_invalid_input_type(self):
         qv = QuestVar()
@@ -482,7 +482,9 @@ class TestValidateExtract:
         qv = QuestVar(is_paired=True)
         import pytest
 
-        with pytest.raises(ValueError, match="Paired analysis requires the same number of replicate columns"):
+        with pytest.raises(
+            ValueError, match="Paired analysis requires the same number of replicate columns"
+        ):
             qv.test(data, cond_1=[0, 1], cond_2=[2, 3, 4])
 
     def test_allow_missing_paired_asymmetric_nan_patterns_raise_clear_error(self):
@@ -498,7 +500,6 @@ class TestValidateExtract:
 
         with pytest.raises(ValueError, match="matching missing-value patterns"):
             qv.test(data, cond_1=[0, 1, 2], cond_2=[3, 4, 5])
-
 
 
 class TestTestResultsSaveLoad:
@@ -628,7 +629,9 @@ class TestTestResultsSaveLoad:
         path = tmp_path / "results.parquet"
         original.save(str(path))
         with open(tmp_path / "results.meta.json", "w") as f:
-            json.dump({"config": original.config.to_dict(), "cond_1": "bad", "cond_2": ["sample_03"]}, f)
+            json.dump(
+                {"config": original.config.to_dict(), "cond_1": "bad", "cond_2": ["sample_03"]}, f
+            )
 
         with pytest.raises(ValueError, match="Metadata keys 'cond_1' and 'cond_2' must be lists"):
             _TestResults.load(str(path))
@@ -644,7 +647,9 @@ class TestTestResultsSaveLoad:
         original.save(str(path))
         pl.read_parquet(path).drop("status").write_parquet(path)
 
-        with pytest.raises(ValueError, match="TestResults data file is missing required columns: status"):
+        with pytest.raises(
+            ValueError, match="TestResults data file is missing required columns: status"
+        ):
             _TestResults.load(str(path))
 
     def test_load_rejects_info_sidecar_missing_required_columns(self, tmp_path):
@@ -659,7 +664,9 @@ class TestTestResultsSaveLoad:
         info_path = tmp_path / "results.info.parquet"
         pl.read_parquet(info_path).drop("s1_cv_status").write_parquet(info_path)
 
-        with pytest.raises(ValueError, match="TestResults sidecar file is missing required columns: s1_cv_status"):
+        with pytest.raises(
+            ValueError, match="TestResults sidecar file is missing required columns: s1_cv_status"
+        ):
             _TestResults.load(str(path))
 
 
@@ -814,5 +821,7 @@ class TestPowerResultsSaveLoad:
         results.save(str(path))
         pl.read_parquet(path).drop("parameter").write_parquet(path)
 
-        with pytest.raises(ValueError, match="PowerResults data file is missing required columns: parameter"):
+        with pytest.raises(
+            ValueError, match="PowerResults data file is missing required columns: parameter"
+        ):
             PowerResults.load(str(path))

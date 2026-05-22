@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
+from numpy.typing import NDArray
 
 from questvar._config import TestConfig
 from questvar._cv import cv_numpy, make_selection_indicator
@@ -69,9 +70,7 @@ def _validate_frame_columns(
 ) -> None:
     missing_columns = [column for column in required_columns if column not in df.columns]
     if missing_columns:
-        raise ValueError(
-            f"{label} is missing required columns: {', '.join(missing_columns)}"
-        )
+        raise ValueError(f"{label} is missing required columns: {', '.join(missing_columns)}")
 
 
 def _to_raw_scale_for_cv(arr: np.ndarray, *, is_log2: bool) -> np.ndarray:
@@ -80,7 +79,7 @@ def _to_raw_scale_for_cv(arr: np.ndarray, *, is_log2: bool) -> np.ndarray:
 
     try:
         with np.errstate(over="raise", invalid="ignore"):
-            raw = np.exp2(arr)
+            raw = cast(NDArray[np.float64], np.exp2(arr))
     except FloatingPointError as exc:
         raise ValueError(
             "log2 input contains values too large to back-transform for raw-scale CV computation"
@@ -360,14 +359,21 @@ class TestResults:
 
     __test__ = False
 
-    def __init__(self, data: pl.DataFrame, config: TestConfig, cond_1: list[Any], cond_2: list[Any], info: pl.DataFrame) -> None:
+    def __init__(
+        self,
+        data: pl.DataFrame,
+        config: TestConfig,
+        cond_1: list[Any],
+        cond_2: list[Any],
+        info: pl.DataFrame,
+    ) -> None:
         self.data = data
         self.config = config
         self.cond_1 = cond_1
         self.cond_2 = cond_2
         self.info = info
 
-    def plot(self, **kwargs):
+    def plot(self, **kwargs: Any) -> Any:
         from questvar.plot.summary import plot_summary
 
         return plot_summary(self, **kwargs)
@@ -441,8 +447,7 @@ class TestResults:
         config_payload = meta["config"]
         if not isinstance(config_payload, dict):
             raise ValueError(
-                "Metadata key 'config' must be a mapping, "
-                f"got {type(config_payload).__name__}."
+                f"Metadata key 'config' must be a mapping, got {type(config_payload).__name__}."
             )
         if not isinstance(meta["cond_1"], list) or not isinstance(meta["cond_2"], list):
             raise ValueError(
@@ -520,7 +525,11 @@ class PowerResults:
                 return f"{lower:.3f}"
             return f"{lower:.3f}..{upper:.3f}"
 
-        lines = ["Power Analysis Results", "=" * 40, f"  Design points:      {len(self.design_grid)}"]
+        lines = [
+            "Power Analysis Results",
+            "=" * 40,
+            f"  Design points:      {len(self.design_grid)}",
+        ]
         if self.run_metrics:
             lines.append(f"  Monte Carlo runs:   {len(self.run_metrics)}")
         if self.diagnostics:
@@ -680,16 +689,17 @@ class PowerResults:
             config = meta.get("config", {})
             if not isinstance(config, dict):
                 raise ValueError(
-                    "Metadata key 'config' must be a mapping, "
-                    f"got {type(config).__name__}."
+                    f"Metadata key 'config' must be a mapping, got {type(config).__name__}."
                 )
-        return cls({
-            "config": config,
-            "design_grid": design_grid,
-            "run_metrics": [],
-            "search_results": [],
-            "diagnostics": {},
-        })
+        return cls(
+            {
+                "config": config,
+                "design_grid": design_grid,
+                "run_metrics": [],
+                "search_results": [],
+                "diagnostics": {},
+            }
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -719,7 +729,7 @@ class PowerResults:
     def optimal_design(self, search_for: str = "n_reps") -> dict[str, Any] | None:
         for row in self.search_results:
             if row["search_for"] == search_for:
-                return row
+                return cast("dict[str, Any]", row)
         return None
 
     def design_table(
@@ -763,10 +773,15 @@ class PowerResults:
             return df.pivot(index=row_axis, on=col_axis, values=metric, aggregate_function="mean")
         except Exception:
             return pl.DataFrame(
-                [{row_axis: r.get(row_axis), col_axis: r.get(col_axis), metric: r.get(metric)} for r in rows]
+                [
+                    {row_axis: r.get(row_axis), col_axis: r.get(col_axis), metric: r.get(metric)}
+                    for r in rows
+                ]
             )
 
-    def compare(self, other: PowerResults | dict[str, Any], level: str = "design_grid") -> list[dict[str, Any]]:
+    def compare(
+        self, other: PowerResults | dict[str, Any], level: str = "design_grid"
+    ) -> list[dict[str, Any]]:
         if hasattr(other, "to_dict"):
             other_payload = other.to_dict()
         elif isinstance(other, dict):
@@ -800,11 +815,8 @@ class PowerResults:
             "cv_mean",
             "cv_thr",
         ]
-        right_index = {
-            tuple(row.get(key) for key in keys): row
-            for row in right_rows
-        }
-        comparison: list[dict] = []
+        right_index = {tuple(row.get(key) for key in keys): row for row in right_rows}
+        comparison: list[dict[str, Any]] = []
         for row in left_rows:
             join_key = tuple(row.get(key) for key in keys)
             other_row = right_index.get(join_key)
@@ -815,7 +827,8 @@ class PowerResults:
                     **{key: row.get(key) for key in keys},
                     "delta_sei_mean": row.get("sei_mean", 0.0) - other_row.get("sei_mean", 0.0),
                     "delta_power": row.get("power", 0.0) - other_row.get("power", 0.0),
-                    "delta_false_diff_rate": row.get("false_diff_rate", 0.0) - other_row.get("false_diff_rate", 0.0),
+                    "delta_false_diff_rate": row.get("false_diff_rate", 0.0)
+                    - other_row.get("false_diff_rate", 0.0),
                 }
             )
         return comparison
@@ -823,9 +836,7 @@ class PowerResults:
     def plot(self, kind: str = "power_profile", **kwargs: Any) -> Any:
         from questvar.plot.power import plot_power
 
-        plotters: dict[str, Any] = {
-            "power_profile": plot_power
-        }
+        plotters: dict[str, Any] = {"power_profile": plot_power}
         if kind not in plotters:
             raise ValueError(
                 f"Parameter 'kind' has unsupported PowerResults plot type {kind!r}. "

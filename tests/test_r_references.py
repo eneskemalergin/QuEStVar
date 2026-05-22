@@ -21,9 +21,7 @@ from questvar._ttest import (
     run_paired,
     run_unpaired,
 )
-
 from tests._r_reference import run_r_p_adjust_reference, run_r_ttest_tost_reference
-
 
 pytestmark = pytest.mark.r_reference
 

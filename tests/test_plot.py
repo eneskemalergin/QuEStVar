@@ -16,11 +16,14 @@ def _make_test_results(n_prts=100, n_reps=3) -> TestResults:
     data["protein_id"] = [f"p{i}" for i in range(n_prts)]
     df = pl.DataFrame(data)
     qv = QuestVar(cv_thr=0.5)
-    return qv.test(df, [f"s{i}" for i in range(n_reps)],
-                   [f"s{i}" for i in range(n_reps, n_reps * 2)])
+    return qv.test(
+        df, [f"s{i}" for i in range(n_reps)], [f"s{i}" for i in range(n_reps, n_reps * 2)]
+    )
 
 
-def _make_result_row(feature_id: str, *, status: int, log2fc: float) -> dict[str, float | int | str]:
+def _make_result_row(
+    feature_id: str, *, status: int, log2fc: float
+) -> dict[str, float | int | str]:
     if status == 1:
         df_p = 0.9
         df_adjp = 0.9
@@ -75,7 +78,9 @@ def _make_manual_test_results(
 
     data = pl.DataFrame(
         {
-            "feature_id": pl.Series("feature_id", [row["feature_id"] for row in rows], dtype=pl.String),
+            "feature_id": pl.Series(
+                "feature_id", [row["feature_id"] for row in rows], dtype=pl.String
+            ),
             "n1": pl.Series("n1", [row["n1"] for row in rows], dtype=pl.Float64),
             "n2": pl.Series("n2", [row["n2"] for row in rows], dtype=pl.Float64),
             "log2fc": pl.Series("log2fc", [row["log2fc"] for row in rows], dtype=pl.Float64),
@@ -85,17 +90,29 @@ def _make_manual_test_results(
             "eq_p": pl.Series("eq_p", [row["eq_p"] for row in rows], dtype=pl.Float64),
             "eq_adjp": pl.Series("eq_adjp", [row["eq_adjp"] for row in rows], dtype=pl.Float64),
             "comb_p": pl.Series("comb_p", [row["comb_p"] for row in rows], dtype=pl.Float64),
-            "comb_adjp": pl.Series("comb_adjp", [row["comb_adjp"] for row in rows], dtype=pl.Float64),
-            "log10_pval": pl.Series("log10_pval", [row["log10_pval"] for row in rows], dtype=pl.Float64),
-            "log10_adj_pval": pl.Series("log10_adj_pval", [row["log10_adj_pval"] for row in rows], dtype=pl.Float64),
+            "comb_adjp": pl.Series(
+                "comb_adjp", [row["comb_adjp"] for row in rows], dtype=pl.Float64
+            ),
+            "log10_pval": pl.Series(
+                "log10_pval", [row["log10_pval"] for row in rows], dtype=pl.Float64
+            ),
+            "log10_adj_pval": pl.Series(
+                "log10_adj_pval", [row["log10_adj_pval"] for row in rows], dtype=pl.Float64
+            ),
             "status": pl.Series("status", [row["status"] for row in rows], dtype=pl.Int8),
         }
     )
     info = pl.DataFrame(
         {
-            "feature_id": pl.Series("feature_id", [row["feature_id"] for row in info_rows], dtype=pl.String),
-            "s1_cv_status": pl.Series("s1_cv_status", [row["s1_cv_status"] for row in info_rows], dtype=pl.Int64),
-            "s2_cv_status": pl.Series("s2_cv_status", [row["s2_cv_status"] for row in info_rows], dtype=pl.Int64),
+            "feature_id": pl.Series(
+                "feature_id", [row["feature_id"] for row in info_rows], dtype=pl.String
+            ),
+            "s1_cv_status": pl.Series(
+                "s1_cv_status", [row["s1_cv_status"] for row in info_rows], dtype=pl.Int64
+            ),
+            "s2_cv_status": pl.Series(
+                "s2_cv_status", [row["s2_cv_status"] for row in info_rows], dtype=pl.Int64
+            ),
             "status": pl.Series("status", [row["status"] for row in info_rows], dtype=pl.Float64),
         }
     )
@@ -229,12 +246,17 @@ class TestPlotSummary:
         assert hasattr(fig, "ax_counts")
         assert [patch.get_width() for patch in fig.ax_counts.patches] == [0, 0, 0, 0, 3]
         assert "Excluded" in [tick.get_text() for tick in fig.ax_counts.get_yticklabels()]
-        assert sum(int(text.get_text()) for text in fig.ax_matrix.texts if text.get_text().isdigit()) == 3
+        assert (
+            sum(int(text.get_text()) for text in fig.ax_matrix.texts if text.get_text().isdigit())
+            == 3
+        )
         assert fig._suptitle.get_text() == "QuEStVar Summary: Alpha vs Beta"
 
         fig_no_excluded = results.plot(show_excluded=False)
         assert [patch.get_width() for patch in fig_no_excluded.ax_counts.patches] == [0, 0, 0, 0]
-        assert "Excluded" not in [tick.get_text() for tick in fig_no_excluded.ax_counts.get_yticklabels()]
+        assert "Excluded" not in [
+            tick.get_text() for tick in fig_no_excluded.ax_counts.get_yticklabels()
+        ]
 
     def test_single_status_results_keep_one_scatter_group_and_counts(self):
         results = _make_manual_test_results(
@@ -366,9 +388,15 @@ class TestPlotPower:
             results.plot(ci=-0.5)
 
     def test_invalid_kind(self):
-        results = PowerResults({"config": {}, "design_grid": [],
-                                "run_metrics": [], "search_results": [],
-                                "diagnostics": {}})
+        results = PowerResults(
+            {
+                "config": {},
+                "design_grid": [],
+                "run_metrics": [],
+                "search_results": [],
+                "diagnostics": {},
+            }
+        )
         with pytest.raises(ValueError, match="Parameter 'kind'"):
             results.plot(kind="invalid_kind")
 
@@ -377,6 +405,7 @@ class TestAntlersStandalone:
     def test_returns_figure(self):
         results = _make_test_results(24, 3)
         from questvar.plot import antlers
+
         fig = antlers(results)
         assert fig is not None
         assert hasattr(fig, "ax_main")
@@ -384,6 +413,7 @@ class TestAntlersStandalone:
     def test_with_annotations(self):
         results = _make_test_results(24, 3)
         from questvar.plot import antlers
+
         ids = results.data["feature_id"].to_list()[:5]
         fig = antlers(results, feature_ids=ids)
         assert hasattr(fig, "ax_main")
@@ -408,12 +438,14 @@ class TestAntlersStandalone:
     def test_with_top_n(self):
         results = _make_test_results(24, 3)
         from questvar.plot import antlers
+
         fig = antlers(results, top_n=3)
         assert hasattr(fig, "ax_main")
 
     def test_save_png(self, tmp_path: Path):
         results = _make_test_results(24, 3)
         from questvar.plot import antlers
+
         path = tmp_path / "antlers.png"
         antlers(results, save_path=str(path))
         assert path.exists()
@@ -421,6 +453,7 @@ class TestAntlersStandalone:
     def test_cond_labels(self):
         results = _make_test_results(24, 3)
         from questvar.plot import antlers
+
         fig = antlers(results, cond_1_label="Tumor", cond_2_label="Normal")
         assert hasattr(fig, "ax_main")
 
@@ -495,13 +528,15 @@ class TestAntlersStandalone:
 class TestPlotNaming:
     def test_antlers_import(self):
         from questvar.plot import antlers
+
         assert callable(antlers)
 
     def test_summary_import(self):
         from questvar.plot import summary
+
         assert callable(summary)
 
     def test_power_profile_import(self):
         from questvar.plot import power_profile
-        assert callable(power_profile)
 
+        assert callable(power_profile)

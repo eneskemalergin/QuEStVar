@@ -41,8 +41,14 @@ def style_ax(
     if ylabel:
         ax.set_ylabel(ylabel, color=pc.label_color, fontsize=pc.label_fontsize, labelpad=5)
     if pc.grid:
-        ax.grid(True, color=pc.grid_color, alpha=pc.grid_alpha,
-                linestyle=pc.grid_linestyle, linewidth=pc.grid_linewidth, zorder=0)
+        ax.grid(
+            True,
+            color=pc.grid_color,
+            alpha=pc.grid_alpha,
+            linestyle=pc.grid_linestyle,
+            linewidth=pc.grid_linewidth,
+            zorder=0,
+        )
         ax.set_axisbelow(True)
 
 
@@ -84,19 +90,55 @@ def draw_thresholds(
         ax.axhline(y=0, color=pc.spine_color, linestyle="-", linewidth=0.8, alpha=0.6, zorder=1)
         ax.axvline(x=0, color=pc.spine_color, linestyle="-", linewidth=0.8, alpha=0.6, zorder=1)
 
-    ax.axhline(y=np.log10(p_thr), color=_eq_col, linestyle=pc.eq_threshold_linestyle,
-               linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax.axvline(x=eq_thr, color=_eq_col, linestyle=pc.eq_threshold_linestyle,
-               linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax.axvline(x=-eq_thr, color=_eq_col, linestyle=pc.eq_threshold_linestyle,
-               linewidth=_thr_lw, alpha=0.8, zorder=2)
+    ax.axhline(
+        y=np.log10(p_thr),
+        color=_eq_col,
+        linestyle=pc.eq_threshold_linestyle,
+        linewidth=_thr_lw,
+        alpha=0.8,
+        zorder=2,
+    )
+    ax.axvline(
+        x=eq_thr,
+        color=_eq_col,
+        linestyle=pc.eq_threshold_linestyle,
+        linewidth=_thr_lw,
+        alpha=0.8,
+        zorder=2,
+    )
+    ax.axvline(
+        x=-eq_thr,
+        color=_eq_col,
+        linestyle=pc.eq_threshold_linestyle,
+        linewidth=_thr_lw,
+        alpha=0.8,
+        zorder=2,
+    )
 
-    ax.axhline(y=-np.log10(p_thr), color=_df_col, linestyle=pc.df_threshold_linestyle,
-               linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax.axvline(x=df_thr, color=_df_col, linestyle=pc.df_threshold_linestyle,
-               linewidth=_thr_lw, alpha=0.8, zorder=2)
-    ax.axvline(x=-df_thr, color=_df_col, linestyle=pc.df_threshold_linestyle,
-               linewidth=_thr_lw, alpha=0.8, zorder=2)
+    ax.axhline(
+        y=-np.log10(p_thr),
+        color=_df_col,
+        linestyle=pc.df_threshold_linestyle,
+        linewidth=_thr_lw,
+        alpha=0.8,
+        zorder=2,
+    )
+    ax.axvline(
+        x=df_thr,
+        color=_df_col,
+        linestyle=pc.df_threshold_linestyle,
+        linewidth=_thr_lw,
+        alpha=0.8,
+        zorder=2,
+    )
+    ax.axvline(
+        x=-df_thr,
+        color=_df_col,
+        linestyle=pc.df_threshold_linestyle,
+        linewidth=_thr_lw,
+        alpha=0.8,
+        zorder=2,
+    )
 
     if labels:
         ylim = ax.get_ylim()
@@ -108,26 +150,78 @@ def draw_thresholds(
         x_right = xlim[1] - x_range * 0.01
 
         # Vertical FC threshold labels: diff at top (rotated), eq at bottom (rotated)
-        ax.text(df_thr, y_top, f"diff: \u00b1{df_thr}", rotation=90,
-                ha="left", va="top", fontsize=_fs,
-                color=_df_col, fontweight="bold", alpha=0.8)
-        ax.text(-df_thr, y_top, f"diff: \u00b1{df_thr}", rotation=90,
-                ha="right", va="top", fontsize=_fs,
-                color=_df_col, fontweight="bold", alpha=0.8)
-        ax.text(eq_thr, y_bot, f"eq: \u00b1{eq_thr}", rotation=90,
-                ha="left", va="bottom", fontsize=_fs,
-                color=_eq_col, fontweight="bold", alpha=0.8)
-        ax.text(-eq_thr, y_bot, f"eq: \u00b1{eq_thr}", rotation=90,
-                ha="right", va="bottom", fontsize=_fs,
-                color=_eq_col, fontweight="bold", alpha=0.8)
+        ax.text(
+            df_thr,
+            y_top,
+            f"diff: \u00b1{df_thr}",
+            rotation=90,
+            ha="left",
+            va="top",
+            fontsize=_fs,
+            color=_df_col,
+            fontweight="bold",
+            alpha=0.8,
+        )
+        ax.text(
+            -df_thr,
+            y_top,
+            f"diff: \u00b1{df_thr}",
+            rotation=90,
+            ha="right",
+            va="top",
+            fontsize=_fs,
+            color=_df_col,
+            fontweight="bold",
+            alpha=0.8,
+        )
+        ax.text(
+            eq_thr,
+            y_bot,
+            f"eq: \u00b1{eq_thr}",
+            rotation=90,
+            ha="left",
+            va="bottom",
+            fontsize=_fs,
+            color=_eq_col,
+            fontweight="bold",
+            alpha=0.8,
+        )
+        ax.text(
+            -eq_thr,
+            y_bot,
+            f"eq: \u00b1{eq_thr}",
+            rotation=90,
+            ha="right",
+            va="bottom",
+            fontsize=_fs,
+            color=_eq_col,
+            fontweight="bold",
+            alpha=0.8,
+        )
 
         # Horizontal p-value threshold labels: at the right edge
-        ax.text(x_right, np.log10(p_thr), f"eq: p\u2264{p_thr}",
-                ha="right", va="bottom", fontsize=_fs,
-                color=_eq_col, fontweight="bold", alpha=0.8)
-        ax.text(x_right, -np.log10(p_thr), f"diff: p\u2264{p_thr}",
-                ha="right", va="top", fontsize=_fs,
-                color=_df_col, fontweight="bold", alpha=0.8)
+        ax.text(
+            x_right,
+            np.log10(p_thr),
+            f"eq: p\u2264{p_thr}",
+            ha="right",
+            va="bottom",
+            fontsize=_fs,
+            color=_eq_col,
+            fontweight="bold",
+            alpha=0.8,
+        )
+        ax.text(
+            x_right,
+            -np.log10(p_thr),
+            f"diff: p\u2264{p_thr}",
+            ha="right",
+            va="top",
+            fontsize=_fs,
+            color=_df_col,
+            fontweight="bold",
+            alpha=0.8,
+        )
 
 
 def finalize_plot(

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 __version__ = "0.1.0"
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name == "QuestVar":
         from questvar._api import QuestVar
 
@@ -17,7 +19,7 @@ def __getattr__(name: str):
 
         return PowerResults
     if name == "test":
-        from questvar.test import test
+        from questvar._test import test
 
         return test
     if name == "run_power_analysis":

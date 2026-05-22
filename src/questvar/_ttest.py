@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -57,9 +58,7 @@ def ttest_ind(
     s1 = np.asarray(s1, dtype=np.float64)
     s2 = np.asarray(s2, dtype=np.float64)
     if s1.shape != s2.shape:
-        raise ValueError(
-            f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}"
-        )
+        raise ValueError(f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}")
     n1 = np.sum(~np.isnan(s1), axis=1).astype(np.float64)
     n2 = np.sum(~np.isnan(s2), axis=1).astype(np.float64)
     m1 = np.nanmean(s1, axis=1)
@@ -95,9 +94,7 @@ def ttest_rel(
     s1 = np.asarray(s1, dtype=np.float64)
     s2 = np.asarray(s2, dtype=np.float64)
     if s1.shape != s2.shape:
-        raise ValueError(
-            f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}"
-        )
+        raise ValueError(f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}")
     _validate_paired_observations(s1, s2)
     d = s1 - s2
     n = np.sum(~np.isnan(d), axis=1).astype(np.float64)
@@ -143,12 +140,12 @@ def _pvalue_from_t(
     df: NDArray[np.float64],
     alternative: str,
 ) -> NDArray[np.float64]:
-    cdf = stdtr(df, t_stat)
+    cdf: NDArray[np.float64] = cast(NDArray[np.float64], stdtr(df, t_stat))
     if alternative == "less":
         return cdf
     if alternative == "greater":
-        return 1.0 - cdf
-    return 2.0 * np.where(t_stat > 0, 1.0 - cdf, cdf)
+        return cast(NDArray[np.float64], 1.0 - cdf)  # type: ignore[redundant-cast]
+    return cast(NDArray[np.float64], 2.0 * np.where(t_stat > 0, 1.0 - cdf, cdf))  # type: ignore[redundant-cast]
 
 
 def run_unpaired(
@@ -184,7 +181,7 @@ def run_unpaired(
             den = (v1 / n1) ** 2 / (n1 - 1.0) + (v2 / n2) ** 2 / (n2 - 1.0)
             df = np.where(den > 0, num / den, 1.0)
 
-    def _t_pval(diff: NDArray, alt: str) -> NDArray:
+    def _t_pval(diff: NDArray[np.float64], alt: str) -> NDArray[np.float64]:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             t = np.where(diff == 0, 0.0, diff / se)
@@ -244,9 +241,7 @@ def run_paired(
     s1 = np.asarray(s1, dtype=np.float64)
     s2 = np.asarray(s2, dtype=np.float64)
     if s1.shape != s2.shape:
-        raise ValueError(
-            f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}"
-        )
+        raise ValueError(f"s1 and s2 must have same shape, got {s1.shape} vs {s2.shape}")
     _validate_paired_observations(s1, s2)
 
     d = s1 - s2
@@ -257,7 +252,7 @@ def run_paired(
     se = np.sqrt(var / n)
     df = n - 1.0
 
-    def _t_pval(diff: NDArray, alt: str) -> NDArray:
+    def _t_pval(diff: NDArray[np.float64], alt: str) -> NDArray[np.float64]:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             t = np.where(diff == 0, 0.0, diff / se)
@@ -318,16 +313,19 @@ def _validate_paired_observations(
     s1_missing = np.isnan(s1)
     s2_missing = np.isnan(s2)
     asymmetric_rows = np.any(s1_missing != s2_missing, axis=1)
+    n_asymmetric = int(np.sum(asymmetric_rows))
     if np.any(asymmetric_rows):
         raise ValueError(
-            "Paired inputs must have matching missing-value patterns across replicates for each feature, "
-            f"but found asymmetric missingness in {int(np.sum(asymmetric_rows))} feature row(s)."
+            "Paired inputs must have matching missing-value patterns "
+            "across replicates for each feature, "
+            f"but found {n_asymmetric} feature row(s) with asymmetric missingness."
         )
 
     complete_pairs = np.sum(~s1_missing, axis=1)
     too_few_pairs = complete_pairs < 2
+    n_too_few = int(np.sum(too_few_pairs))
     if np.any(too_few_pairs):
         raise ValueError(
             "Paired inputs must contain at least 2 complete replicate pairs per feature, "
-            f"but found {int(np.sum(too_few_pairs))} feature row(s) with fewer than 2 complete pairs."
+            f"but found {n_too_few} feature row(s) with fewer than 2 complete pairs."
         )

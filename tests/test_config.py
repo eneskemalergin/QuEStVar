@@ -4,8 +4,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings
-from hypothesis import assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from questvar._config import VALID_CORRECTIONS, PowerConfig, TestConfig
@@ -14,11 +13,19 @@ from questvar._config import VALID_CORRECTIONS, PowerConfig, TestConfig
 @st.composite
 def valid_testconfig_kwargs(draw):
     eq_thr = draw(st.floats(min_value=0.01, max_value=2.0, allow_nan=False, allow_infinity=False))
-    df_thr = draw(st.floats(min_value=eq_thr + 1e-6, max_value=eq_thr + 3.0, allow_nan=False, allow_infinity=False))
+    df_thr = draw(
+        st.floats(
+            min_value=eq_thr + 1e-6, max_value=eq_thr + 3.0, allow_nan=False, allow_infinity=False
+        )
+    )
     correction = draw(st.sampled_from(sorted(VALID_CORRECTIONS, key=lambda value: str(value))))
     return {
-        "cv_thr": draw(st.floats(min_value=1e-6, max_value=3.0, allow_nan=False, allow_infinity=False)),
-        "p_thr": draw(st.floats(min_value=1e-6, max_value=0.99, allow_nan=False, allow_infinity=False)),
+        "cv_thr": draw(
+            st.floats(min_value=1e-6, max_value=3.0, allow_nan=False, allow_infinity=False)
+        ),
+        "p_thr": draw(
+            st.floats(min_value=1e-6, max_value=0.99, allow_nan=False, allow_infinity=False)
+        ),
         "df_thr": df_thr,
         "eq_thr": eq_thr,
         "var_equal": draw(st.booleans()),
@@ -32,7 +39,11 @@ def valid_testconfig_kwargs(draw):
 @st.composite
 def valid_powerconfig_kwargs(draw):
     eq_thr = draw(st.floats(min_value=0.01, max_value=2.0, allow_nan=False, allow_infinity=False))
-    df_thr = draw(st.floats(min_value=eq_thr + 1e-6, max_value=eq_thr + 3.0, allow_nan=False, allow_infinity=False))
+    df_thr = draw(
+        st.floats(
+            min_value=eq_thr + 1e-6, max_value=eq_thr + 3.0, allow_nan=False, allow_infinity=False
+        )
+    )
     correction = draw(st.sampled_from(sorted(VALID_CORRECTIONS, key=lambda value: str(value))))
     eq_boundaries = draw(
         st.lists(
@@ -60,19 +71,37 @@ def valid_powerconfig_kwargs(draw):
     return {
         "n_prts": draw(st.integers(min_value=1, max_value=10000)),
         "n_reps": draw(st.integers(min_value=2, max_value=12)),
-        "cv_mean": draw(st.floats(min_value=0.01, max_value=1.5, allow_nan=False, allow_infinity=False)),
-        "cv_k": draw(st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)),
-        "cv_theta": draw(st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)),
+        "cv_mean": draw(
+            st.floats(min_value=0.01, max_value=1.5, allow_nan=False, allow_infinity=False)
+        ),
+        "cv_k": draw(
+            st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)
+        ),
+        "cv_theta": draw(
+            st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)
+        ),
         "eq_thr": eq_thr,
-        "p_thr": draw(st.floats(min_value=1e-6, max_value=0.99, allow_nan=False, allow_infinity=False)),
+        "p_thr": draw(
+            st.floats(min_value=1e-6, max_value=0.99, allow_nan=False, allow_infinity=False)
+        ),
         "df_thr": df_thr,
-        "cv_thr": draw(st.floats(min_value=1e-6, max_value=3.0, allow_nan=False, allow_infinity=False)),
+        "cv_thr": draw(
+            st.floats(min_value=1e-6, max_value=3.0, allow_nan=False, allow_infinity=False)
+        ),
         "correction": correction,
-        "int_mu": draw(st.floats(min_value=0.1, max_value=30.0, allow_nan=False, allow_infinity=False)),
-        "int_sd": draw(st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)),
+        "int_mu": draw(
+            st.floats(min_value=0.1, max_value=30.0, allow_nan=False, allow_infinity=False)
+        ),
+        "int_sd": draw(
+            st.floats(min_value=1e-6, max_value=5.0, allow_nan=False, allow_infinity=False)
+        ),
         "n_iterations": draw(st.integers(min_value=1, max_value=25)),
-        "target_sei": draw(st.floats(min_value=1e-6, max_value=1.0, allow_nan=False, allow_infinity=False)),
-        "target_power": draw(st.floats(min_value=1e-6, max_value=1.0, allow_nan=False, allow_infinity=False)),
+        "target_sei": draw(
+            st.floats(min_value=1e-6, max_value=1.0, allow_nan=False, allow_infinity=False)
+        ),
+        "target_power": draw(
+            st.floats(min_value=1e-6, max_value=1.0, allow_nan=False, allow_infinity=False)
+        ),
         "eq_boundaries": eq_boundaries,
         "n_reps_grid": n_reps_grid,
         "n_prts_grid": n_prts_grid,
@@ -238,9 +267,7 @@ class TestPowerConfig:
         assert cfg.cv_thr_grid == (0.1, 0.2)
 
     def test_from_dict(self):
-        cfg = PowerConfig.from_dict(
-            {"n_prts": 1000, "cv_mean": 0.30}
-        )
+        cfg = PowerConfig.from_dict({"n_prts": 1000, "cv_mean": 0.30})
         assert cfg.n_prts == 1000
         assert cfg.cv_mean == 0.30
 
@@ -253,8 +280,11 @@ class TestPowerConfig:
 
     def test_repr_produces_reproducible_output(self):
         cfg = PowerConfig(
-            n_prts=1000, n_reps=8, eq_thr=0.5,
-            random_seed=42, n_jobs=4,
+            n_prts=1000,
+            n_reps=8,
+            eq_thr=0.5,
+            random_seed=42,
+            n_jobs=4,
         )
         r = repr(cfg)
         assert r.startswith("questvar._config.PowerConfig(")

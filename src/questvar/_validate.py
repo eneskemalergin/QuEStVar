@@ -17,8 +17,12 @@ def validate_and_extract(
     *,
     is_paired: bool = False,
 ) -> tuple[
-    NDArray[np.float64], NDArray[np.float64], np.ndarray,
-    list[Any], list[Any], dict[str, Any],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    np.ndarray,
+    list[Any],
+    list[Any],
+    dict[str, Any],
 ]:
     """Validate input data and extract condition arrays.
 
@@ -56,8 +60,7 @@ def validate_and_extract(
         return _from_polars(data, cond_1, cond_2, cv_thr, is_paired=is_paired)
 
     raise TypeError(
-        "Parameter 'data' must be a polars.DataFrame or numpy.ndarray, "
-        f"got {type(data).__name__}."
+        f"Parameter 'data' must be a polars.DataFrame or numpy.ndarray, got {type(data).__name__}."
     )
 
 
@@ -69,8 +72,12 @@ def _from_array(
     *,
     is_paired: bool,
 ) -> tuple[
-    NDArray[np.float64], NDArray[np.float64], np.ndarray,
-    list[Any], list[Any], dict[str, Any],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    np.ndarray,
+    list[Any],
+    list[Any],
+    dict[str, Any],
 ]:
     arr = np.asarray(data, dtype=np.float64)
     if arr.ndim != 2:
@@ -88,13 +95,14 @@ def _from_array(
     idx1 = [int(c) for c in cond_1]
     idx2 = [int(c) for c in cond_2]
 
-    if len(idx1) < 2:
+    n_c1, n_c2 = len(idx1), len(idx2)
+    if n_c1 < 2:
         raise ValueError(
-            f"Parameter 'cond_1' must contain at least 2 replicate indices, got {len(idx1)}: {idx1}."
+            f"Parameter 'cond_1' must contain at least 2 replicate indices, got {n_c1}: {idx1}."
         )
-    if len(idx2) < 2:
+    if n_c2 < 2:
         raise ValueError(
-            f"Parameter 'cond_2' must contain at least 2 replicate indices, got {len(idx2)}: {idx2}."
+            f"Parameter 'cond_2' must contain at least 2 replicate indices, got {n_c2}: {idx2}."
         )
     if is_paired and len(idx1) != len(idx2):
         raise ValueError(
@@ -129,8 +137,12 @@ def _from_polars(
     *,
     is_paired: bool,
 ) -> tuple[
-    NDArray[np.float64], NDArray[np.float64], np.ndarray,
-    list[Any], list[Any], dict[str, Any],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    np.ndarray,
+    list[Any],
+    list[Any],
+    dict[str, Any],
 ]:
 
     if not isinstance(cond_1[0], str):
@@ -153,13 +165,14 @@ def _from_polars(
             f"Parameters 'cond_1' and 'cond_2' must not share columns, got overlap: {shared}."
         )
 
-    if len(cond_1) < 2:
+    n_c1, n_c2 = len(cond_1), len(cond_2)
+    if n_c1 < 2:
         raise ValueError(
-            f"Parameter 'cond_1' must contain at least 2 replicate columns, got {len(cond_1)}: {cond_1}."
+            f"Parameter 'cond_1' must contain at least 2 replicate columns, got {n_c1}: {cond_1}."
         )
-    if len(cond_2) < 2:
+    if n_c2 < 2:
         raise ValueError(
-            f"Parameter 'cond_2' must contain at least 2 replicate columns, got {len(cond_2)}: {cond_2}."
+            f"Parameter 'cond_2' must contain at least 2 replicate columns, got {n_c2}: {cond_2}."
         )
     if is_paired and len(cond_1) != len(cond_2):
         raise ValueError(
@@ -171,10 +184,14 @@ def _from_polars(
         raise ValueError(f"cv_thr must be > 0, got {cv_thr}")
 
     all_null_columns = [
-        repr(column)
-        for column in cond_1 + cond_2
-        if data.get_column(column).null_count() == data.height
+        repr(column) for column in cond_1 if data.get_column(column).null_count() == data.height
     ]
+    all_null_columns.extend(
+        repr(column)
+        for column in cond_2
+        if data.get_column(column).null_count() == data.height  # type: ignore[arg-type]
+    )
+
     if all_null_columns:
         raise ValueError(
             "Parameters 'cond_1'/'cond_2' contain replicate columns with only missing values: "
@@ -183,9 +200,9 @@ def _from_polars(
 
     schema = data.schema
     non_numeric_columns = [
-        f"{column!r} ({schema[column]})"
+        f"{column!r} ({schema[column]})"  # type: ignore[index]
         for column in cond_1 + cond_2
-        if not schema[column].is_numeric()
+        if not schema[column].is_numeric()  # type: ignore[index]
     ]
     if non_numeric_columns:
         raise ValueError(
@@ -222,7 +239,12 @@ def _raise_if_all_nan_replicates(
 ) -> None:
     all_nan_mask = np.isnan(arr).all(axis=0)
     if np.any(all_nan_mask):
-        bad_labels = [repr(labels[idx]) for idx, is_bad in enumerate(all_nan_mask) if is_bad]
+        all_nan_mask_arr = np.atleast_1d(np.asarray(all_nan_mask, dtype=bool))
+        bad_labels = [repr(labels[idx]) for idx, is_bad in enumerate(all_nan_mask_arr) if is_bad]
+        joined = ", ".join(bad_labels)
         raise ValueError(
-            f"Parameter '{parameter_name}' contains replicate columns with only NaN values: {', '.join(bad_labels)}."
+            "Parameter"
+            f" '{parameter_name}'"
+            " contains replicate columns with only NaN values:"
+            f" {joined}."
         )

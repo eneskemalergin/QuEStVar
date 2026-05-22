@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import time
+from dataclasses import replace as _replace
 from math import sqrt as _sqrt
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -89,7 +90,9 @@ def run_power_analysis(
         n_iterations=n_iterations,
         target_sei=target_sei,
         target_power=target_power,
-        eq_boundaries=tuple(eq_boundaries) if eq_boundaries is not None else (0.1, 0.3, 0.5, 0.7, 0.9),
+        eq_boundaries=tuple(eq_boundaries)
+        if eq_boundaries is not None
+        else (0.1, 0.3, 0.5, 0.7, 0.9),
         n_reps_grid=tuple(n_reps_list) if n_reps_list is not None else (3, 5, 10, 20),
         n_prts_grid=tuple(n_prts_list) if n_prts_list is not None else (),
         cv_mean_grid=tuple(cv_mean_list) if cv_mean_list is not None else (0.10, 0.20, 0.30),
@@ -178,7 +181,9 @@ def _run_iteration_fast(
 
     s1_cv = cv_numpy(s1)
     s2_cv = cv_numpy(s2)
-    keep = (make_selection_indicator(s1_cv, cv_thr) > 0) & (make_selection_indicator(s2_cv, cv_thr) > 0)
+    keep = (make_selection_indicator(s1_cv, cv_thr) > 0) & (
+        make_selection_indicator(s2_cv, cv_thr) > 0
+    )
 
     status_full = np.full(n_prts, np.nan, dtype=np.float64)
     if not keep.any():
@@ -186,12 +191,14 @@ def _run_iteration_fast(
 
     s1_log = np.log2(np.maximum(s1[keep], 1e-300))
     s2_log = np.log2(np.maximum(s2[keep], 1e-300))
-    result_arr = run_unpaired(s1_log, s2_log, eq_thr=eq_thr, df_thr=df_thr, p_thr=p_thr, correction=correction)
+    result_arr = run_unpaired(
+        s1_log, s2_log, eq_thr=eq_thr, df_thr=df_thr, p_thr=p_thr, correction=correction
+    )
     status_full[keep] = result_arr[:, COL_STATUS].astype(np.float64)
     return status_full
 
 
-def _simulate_design_point(args: tuple) -> list[dict]:
+def _simulate_design_point(args: tuple[dict[str, Any], dict[str, Any]]) -> list[dict[str, Any]]:
     """Run all MC iterations for one design point. Returns per-iteration metrics.
 
     Batching all iterations here means PowerConfig is constructed once per design
@@ -209,7 +216,7 @@ def _simulate_design_point(args: tuple) -> list[dict]:
     # n_prts may vary when sweeping feature count; fall back to config default.
     n_prts = int(point.get("n_prts", cfg.n_prts))
 
-    metrics: list[dict] = []
+    metrics: list[dict[str, Any]] = []
     # Seeding scheme (Common Random Numbers):
     # The seed depends ONLY on run_id (and random_seed), NOT on the design
     # point identity.  Every design point at run_id=0 uses the same seed,
@@ -296,9 +303,8 @@ def _build_design_points(
 ) -> list[dict[str, float | int | str]]:
     # Derive every scalar from its grid so design points are internally
     # consistent regardless of how PowerConfig was constructed.
-    from dataclasses import replace
 
-    config = replace(
+    config = _replace(
         config,
         n_reps=config.n_reps_grid[0],
         eq_thr=config.eq_boundaries[0],
@@ -428,8 +434,10 @@ def _build_design_points(
     return design_points
 
 
-def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list[dict]:
-    grouped: dict[tuple, list[dict]] = {}
+def _summarize_design_grid(
+    run_metrics: list[dict[str, Any]], config: PowerConfig
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     for row in run_metrics:
         key = (
             row["parameter"],
@@ -441,7 +449,7 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
         )
         grouped.setdefault(key, []).append(row)
 
-    design_grid: list[dict] = []
+    design_grid: list[dict[str, Any]] = []
     for rows in grouped.values():
         first = rows[0]
         sei_values = np.array([row["sei"] for row in rows], dtype=np.float64)
@@ -517,14 +525,16 @@ def _summarize_design_grid(run_metrics: list[dict], config: PowerConfig) -> list
     return sorted(design_grid, key=lambda row: (row["parameter"], row["value"]))
 
 
-def _solve_design_targets(design_grid: list[dict], config: PowerConfig) -> list[dict]:
-    search_specs = {
+def _solve_design_targets(
+    design_grid: list[dict[str, Any]], config: PowerConfig
+) -> list[dict[str, Any]]:
+    search_specs: dict[str, tuple[str, str]] = {
         "n_reps": ("min", "smallest replicate count meeting target power"),
         "eq_thr": ("min", "smallest equivalence boundary meeting target power"),
         "cv_mean": ("max", "largest tolerated mean CV meeting target power"),
         "cv_thr": ("min", "strictest CV filter meeting target power"),
     }
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
 
     axes_to_solve = list(search_specs)
 
@@ -580,7 +590,7 @@ def _solve_design_targets(design_grid: list[dict], config: PowerConfig) -> list[
     return results
 
 
-def _search_failure_reason(rows: list[dict], config: PowerConfig) -> str:
+def _search_failure_reason(rows: list[dict[str, Any]], config: PowerConfig) -> str:
     if not rows:
         return "no tested values were generated"
     max_power = max(row["power"] for row in rows)
@@ -589,18 +599,22 @@ def _search_failure_reason(rows: list[dict], config: PowerConfig) -> str:
     return "no tested value met the requested target"
 
 
-def _check_axis_monotonicity(rows: list[dict], axis: str) -> dict[str, str | bool]:
+def _check_axis_monotonicity(rows: list[dict[str, Any]], axis: str) -> dict[str, str | bool]:
     powers = [row["power"] for row in rows]
     if axis in {"n_reps", "eq_thr", "cv_thr"}:
         direction = "nondecreasing"
-        is_monotone = all(left <= right + 1e-9 for left, right in zip(powers, powers[1:], strict=False))
+        is_monotone = all(
+            left <= right + 1e-9 for left, right in zip(powers, powers[1:], strict=False)
+        )
     else:
         direction = "nonincreasing"
-        is_monotone = all(left + 1e-9 >= right for left, right in zip(powers, powers[1:], strict=False))
+        is_monotone = all(
+            left + 1e-9 >= right for left, right in zip(powers, powers[1:], strict=False)
+        )
     return {"direction": direction, "is_monotone": is_monotone}
 
 
-def _collect_monotonicity_checks(design_grid: list[dict]) -> list[dict[str, str | bool]]:
+def _collect_monotonicity_checks(design_grid: list[dict[str, Any]]) -> list[dict[str, str | bool]]:
     checks: list[dict[str, str | bool]] = []
     axes = ["n_reps", "eq_thr", "cv_thr", "cv_mean"]
     for axis in axes:

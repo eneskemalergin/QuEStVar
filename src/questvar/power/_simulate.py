@@ -56,5 +56,5 @@ def simulate_data(
     if delta != 0.0:
         # Shift condition 2 by delta in log2 space: multiply intensities by 2^delta.
         n_half = n_reps // 2
-        data[:, n_half:] *= 2.0 ** delta
+        data[:, n_half:] *= 2.0**delta
     return data.astype(np.float64)

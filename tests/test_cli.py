@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -14,9 +14,7 @@ from questvar._cli import main
 
 def _make_test_data(tmp_path: Path, n_prts: int = 50, n_reps: int = 3) -> Path:
     rng = np.random.default_rng(42)
-    data = {
-        f"sample_{i:02d}": rng.lognormal(18, 0.5, n_prts) for i in range(n_reps * 2)
-    }
+    data = {f"sample_{i:02d}": rng.lognormal(18, 0.5, n_prts) for i in range(n_reps * 2)}
     data["protein_id"] = [f"prot_{i:06d}" for i in range(n_prts)]
     path = tmp_path / "input.parquet"
     pl.DataFrame(data).write_parquet(path)
@@ -84,20 +82,41 @@ class TestCliTest:
     def test_basic(self, tmp_path: Path):
         input_path = _make_test_data(tmp_path)
         out = tmp_path / "out.parquet"
-        main(["test", "--data", str(input_path),
-              "--cond-1", "sample_00,sample_01,sample_02",
-              "--cond-2", "sample_03,sample_04,sample_05",
-              "--output", str(out)])
+        main(
+            [
+                "test",
+                "--data",
+                str(input_path),
+                "--cond-1",
+                "sample_00,sample_01,sample_02",
+                "--cond-2",
+                "sample_03,sample_04,sample_05",
+                "--output",
+                str(out),
+            ]
+        )
         assert out.exists()
 
     def test_with_overrides(self, tmp_path: Path):
         input_path = _make_test_data(tmp_path)
         out = tmp_path / "out.parquet"
-        main(["test", "--data", str(input_path),
-              "--cond-1", "sample_00,sample_01,sample_02",
-              "--cond-2", "sample_03,sample_04,sample_05",
-              "--cv-thr", "0.3", "--p-thr", "0.01",
-              "--output", str(out)])
+        main(
+            [
+                "test",
+                "--data",
+                str(input_path),
+                "--cond-1",
+                "sample_00,sample_01,sample_02",
+                "--cond-2",
+                "sample_03,sample_04,sample_05",
+                "--cv-thr",
+                "0.3",
+                "--p-thr",
+                "0.01",
+                "--output",
+                str(out),
+            ]
+        )
         assert out.exists()
         loaded = pl.read_parquet(out)
         assert "status" in loaded.columns
@@ -106,11 +125,21 @@ class TestCliTest:
         input_path = _make_test_data(tmp_path)
         config_path = _make_yaml_config(tmp_path)
         out = tmp_path / "out.parquet"
-        main(["test", "--data", str(input_path),
-              "--cond-1", "sample_00,sample_01,sample_02",
-              "--cond-2", "sample_03,sample_04,sample_05",
-              "--config", str(config_path),
-              "--output", str(out)])
+        main(
+            [
+                "test",
+                "--data",
+                str(input_path),
+                "--cond-1",
+                "sample_00,sample_01,sample_02",
+                "--cond-2",
+                "sample_03,sample_04,sample_05",
+                "--config",
+                str(config_path),
+                "--output",
+                str(out),
+            ]
+        )
         assert out.exists()
 
     def test_with_input_scale_log2(self, tmp_path: Path):
@@ -121,13 +150,21 @@ class TestCliTest:
         ).write_parquet(log_input_path)
 
         out = tmp_path / "out.parquet"
-        main([
-            "test", "--data", str(log_input_path),
-            "--cond-1", "sample_00,sample_01,sample_02",
-            "--cond-2", "sample_03,sample_04,sample_05",
-            "--input-scale", "log2",
-            "--output", str(out),
-        ])
+        main(
+            [
+                "test",
+                "--data",
+                str(log_input_path),
+                "--cond-1",
+                "sample_00,sample_01,sample_02",
+                "--cond-2",
+                "sample_03,sample_04,sample_05",
+                "--input-scale",
+                "log2",
+                "--output",
+                str(out),
+            ]
+        )
         assert out.exists()
 
         cli_results = TestResults.load(str(out))
@@ -148,9 +185,13 @@ class TestCliTest:
         out_scale = tmp_path / "out_scale.parquet"
         out_alias = tmp_path / "out_alias.parquet"
         base_args = [
-            "test", "--data", str(log_input_path),
-            "--cond-1", "sample_00,sample_01,sample_02",
-            "--cond-2", "sample_03,sample_04,sample_05",
+            "test",
+            "--data",
+            str(log_input_path),
+            "--cond-1",
+            "sample_00,sample_01,sample_02",
+            "--cond-2",
+            "sample_03,sample_04,sample_05",
         ]
 
         main([*base_args, "--input-scale", "log2", "--output", str(out_scale)])
@@ -164,10 +205,19 @@ class TestCliTest:
     def test_save_csv(self, tmp_path: Path):
         input_path = _make_test_data(tmp_path)
         out = tmp_path / "out.csv"
-        main(["test", "--data", str(input_path),
-              "--cond-1", "sample_00,sample_01,sample_02",
-              "--cond-2", "sample_03,sample_04,sample_05",
-              "--output", str(out)])
+        main(
+            [
+                "test",
+                "--data",
+                str(input_path),
+                "--cond-1",
+                "sample_00,sample_01,sample_02",
+                "--cond-2",
+                "sample_03,sample_04,sample_05",
+                "--output",
+                str(out),
+            ]
+        )
         assert out.exists()
 
     def test_error_no_data(self):
@@ -216,24 +266,48 @@ class TestCliTest:
 class TestCliPower:
     def test_basic(self, tmp_path: Path):
         out = tmp_path / "power.parquet"
-        main(["power", "--eq-boundaries", "0.5",
-              "--n-reps-list", "5",
-              "--cv-mean-list", "0.20",
-              "--n-features", "100",
-              "--n-iterations", "2",
-              "--n-jobs", "1",
-              "--output", str(out)])
+        main(
+            [
+                "power",
+                "--eq-boundaries",
+                "0.5",
+                "--n-reps-list",
+                "5",
+                "--cv-mean-list",
+                "0.20",
+                "--n-features",
+                "100",
+                "--n-iterations",
+                "2",
+                "--n-jobs",
+                "1",
+                "--output",
+                str(out),
+            ]
+        )
         assert out.exists()
 
     def test_power_tsv(self, tmp_path: Path):
         out = tmp_path / "power.tsv"
-        main(["power", "--eq-boundaries", "0.5",
-              "--n-reps-list", "5",
-              "--cv-mean-list", "0.20",
-              "--n-features", "100",
-              "--n-iterations", "2",
-              "--n-jobs", "1",
-              "--output", str(out)])
+        main(
+            [
+                "power",
+                "--eq-boundaries",
+                "0.5",
+                "--n-reps-list",
+                "5",
+                "--cv-mean-list",
+                "0.20",
+                "--n-features",
+                "100",
+                "--n-iterations",
+                "2",
+                "--n-jobs",
+                "1",
+                "--output",
+                str(out),
+            ]
+        )
         assert out.exists()
 
     def test_power_full_config_parity_and_overrides(self, tmp_path: Path):
@@ -243,26 +317,46 @@ class TestCliPower:
         main(
             [
                 "power",
-                "--config", str(config_path),
-                "--eq-thr", "0.6",
-                "--n-reps", "5",
-                "--cv-mean", "0.25",
-                "--cv-thr", "1.3",
-                "--n-prts", "90",
-                "--n-prts-list", "90,140",
-                "--p-thr", "0.03",
-                "--df-thr", "1.4",
-                "--target-sei", "0.7",
-                "--target-power", "0.9",
-                "--correction", "none",
-                "--int-mu", "18.2",
-                "--int-sd", "0.8",
-                "--cv-k", "1.8",
-                "--cv-theta", "0.6",
-                "--random-seed", "7",
-                "--n-iterations", "2",
-                "--n-jobs", "1",
-                "--output", str(out),
+                "--config",
+                str(config_path),
+                "--eq-thr",
+                "0.6",
+                "--n-reps",
+                "5",
+                "--cv-mean",
+                "0.25",
+                "--cv-thr",
+                "1.3",
+                "--n-prts",
+                "90",
+                "--n-prts-list",
+                "90,140",
+                "--p-thr",
+                "0.03",
+                "--df-thr",
+                "1.4",
+                "--target-sei",
+                "0.7",
+                "--target-power",
+                "0.9",
+                "--correction",
+                "none",
+                "--int-mu",
+                "18.2",
+                "--int-sd",
+                "0.8",
+                "--cv-k",
+                "1.8",
+                "--cv-theta",
+                "0.6",
+                "--random-seed",
+                "7",
+                "--n-iterations",
+                "2",
+                "--n-jobs",
+                "1",
+                "--output",
+                str(out),
             ]
         )
 
@@ -297,19 +391,32 @@ class TestCliPower:
         main(
             [
                 "power",
-                "--eq-thr", "0.6",
-                "--eq-boundaries", "0.4,0.8",
-                "--n-reps", "5",
-                "--n-reps-list", "4,6",
-                "--cv-mean", "0.25",
-                "--cv-mean-list", "0.15,0.35",
-                "--cv-thr", "1.3",
-                "--cv-thr-list", "0.8,1.6",
-                "--n-prts", "100",
-                "--n-prts-list", "100,150",
-                "--n-iterations", "2",
-                "--n-jobs", "1",
-                "--output", str(out),
+                "--eq-thr",
+                "0.6",
+                "--eq-boundaries",
+                "0.4,0.8",
+                "--n-reps",
+                "5",
+                "--n-reps-list",
+                "4,6",
+                "--cv-mean",
+                "0.25",
+                "--cv-mean-list",
+                "0.15,0.35",
+                "--cv-thr",
+                "1.3",
+                "--cv-thr-list",
+                "0.8,1.6",
+                "--n-prts",
+                "100",
+                "--n-prts-list",
+                "100,150",
+                "--n-iterations",
+                "2",
+                "--n-jobs",
+                "1",
+                "--output",
+                str(out),
             ]
         )
 
@@ -332,14 +439,19 @@ class TestCliPower:
         main(
             [
                 "test",
-                "--data", str(input_path),
-                "--cond-1", "sample_00,sample_01,sample_02",
-                "--cond-2", "sample_03,sample_04,sample_05",
-                "--correction", "none",
+                "--data",
+                str(input_path),
+                "--cond-1",
+                "sample_00,sample_01,sample_02",
+                "--cond-2",
+                "sample_03,sample_04,sample_05",
+                "--correction",
+                "none",
                 "--allow-missing",
                 "--no-var-equal",
                 "--no-is-paired",
-                "--output", str(out),
+                "--output",
+                str(out),
             ]
         )
 
@@ -357,19 +469,30 @@ class TestCliPlot:
         results_path = tmp_path / "results.parquet"
         plot_path = tmp_path / "antlers.png"
 
-        main([
-            "test",
-            "--data", str(input_path),
-            "--cond-1", "sample_00,sample_01,sample_02",
-            "--cond-2", "sample_03,sample_04,sample_05",
-            "--output", str(results_path),
-        ])
-        main([
-            "plot",
-            "--results", str(results_path),
-            "--type", "antlers",
-            "--output", str(plot_path),
-        ])
+        main(
+            [
+                "test",
+                "--data",
+                str(input_path),
+                "--cond-1",
+                "sample_00,sample_01,sample_02",
+                "--cond-2",
+                "sample_03,sample_04,sample_05",
+                "--output",
+                str(results_path),
+            ]
+        )
+        main(
+            [
+                "plot",
+                "--results",
+                str(results_path),
+                "--type",
+                "antlers",
+                "--output",
+                str(plot_path),
+            ]
+        )
 
         assert plot_path.exists()
         assert plot_path.stat().st_size > 0
@@ -378,19 +501,36 @@ class TestCliPlot:
         results_path = tmp_path / "power.parquet"
         plot_path = tmp_path / "power.png"
 
-        main(["power", "--eq-boundaries", "0.5",
-              "--n-reps-list", "5",
-              "--cv-mean-list", "0.20",
-              "--n-features", "100",
-              "--n-iterations", "2",
-              "--n-jobs", "1",
-              "--output", str(results_path)])
-        main([
-            "plot",
-            "--results", str(results_path),
-            "--type", "power",
-            "--output", str(plot_path),
-        ])
+        main(
+            [
+                "power",
+                "--eq-boundaries",
+                "0.5",
+                "--n-reps-list",
+                "5",
+                "--cv-mean-list",
+                "0.20",
+                "--n-features",
+                "100",
+                "--n-iterations",
+                "2",
+                "--n-jobs",
+                "1",
+                "--output",
+                str(results_path),
+            ]
+        )
+        main(
+            [
+                "plot",
+                "--results",
+                str(results_path),
+                "--type",
+                "power",
+                "--output",
+                str(plot_path),
+            ]
+        )
 
         assert plot_path.exists()
         assert plot_path.stat().st_size > 0
@@ -399,22 +539,36 @@ class TestCliPlot:
         results_path = tmp_path / "power.json"
         plot_path = tmp_path / "power_from_json.png"
 
-        main([
-            "power",
-            "--eq-boundaries", "0.5",
-            "--n-reps-list", "5",
-            "--cv-mean-list", "0.20",
-            "--n-prts", "100",
-            "--n-iterations", "2",
-            "--n-jobs", "1",
-            "--output", str(results_path),
-        ])
-        main([
-            "plot",
-            "--results", str(results_path),
-            "--type", "power",
-            "--output", str(plot_path),
-        ])
+        main(
+            [
+                "power",
+                "--eq-boundaries",
+                "0.5",
+                "--n-reps-list",
+                "5",
+                "--cv-mean-list",
+                "0.20",
+                "--n-prts",
+                "100",
+                "--n-iterations",
+                "2",
+                "--n-jobs",
+                "1",
+                "--output",
+                str(results_path),
+            ]
+        )
+        main(
+            [
+                "plot",
+                "--results",
+                str(results_path),
+                "--type",
+                "power",
+                "--output",
+                str(plot_path),
+            ]
+        )
 
         assert plot_path.exists()
         assert plot_path.stat().st_size > 0
@@ -440,7 +594,9 @@ class TestCliHelp:
         assert "--correction" in help_text
         assert ".json" in help_text
 
-    def test_test_help_lists_none_correction_and_boolean_overrides(self, capsys: pytest.CaptureFixture[str]):
+    def test_test_help_lists_none_correction_and_boolean_overrides(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
         with pytest.raises(SystemExit):
             main(["test", "--help"])
 

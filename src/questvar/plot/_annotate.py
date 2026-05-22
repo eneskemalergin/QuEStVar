@@ -15,7 +15,7 @@ def annotate_features(
     feature_ids: list[str] | None = None,
     top_n: int | None = None,
     pc: Any = None,
-) -> list:
+) -> list[Any]:
     """Annotate data points with non-overlapping labels.
 
     Labels are placed in one of four regions (upper-left, upper-right,
@@ -43,8 +43,7 @@ def annotate_features(
         un_idx = np.where(status == 0)[0]
         # Pick top-n from each interesting category, only 1 from unexplained.
         # Filter out NaN/Inf values that would corrupt argsort ordering.
-        for group_idx, n_pick in [(eq_idx, top_n), (up_idx, top_n),
-                                   (dn_idx, top_n), (un_idx, 1)]:
+        for group_idx, n_pick in [(eq_idx, top_n), (up_idx, top_n), (dn_idx, top_n), (un_idx, 1)]:
             if len(group_idx) == 0:
                 continue
             valid = np.isfinite(log10_adjp[group_idx])
@@ -73,7 +72,10 @@ def annotate_features(
 
     # Group labels into 4 regions
     regions: dict[str, list[tuple[float, float, str, str]]] = {
-        "ul": [], "ur": [], "ll": [], "lr": [],
+        "ul": [],
+        "ur": [],
+        "ll": [],
+        "lr": [],
     }
 
     for i in range(len(x_data)):
@@ -95,13 +97,16 @@ def annotate_features(
         if len(text) > pc.annotate_max_chars:
             text = text[: pc.annotate_max_chars - 3] + "..."
 
-        region = ("u" if yi > (ylim[0] + ylim[1]) / 2 else "l") + \
-                 ("r" if xi > (xlim[0] + xlim[1]) / 2 else "l")
+        region = ("u" if yi > (ylim[0] + ylim[1]) / 2 else "l") + (
+            "r" if xi > (xlim[0] + xlim[1]) / 2 else "l"
+        )
         regions[region].append((xi, yi, text, st_key))
 
     region_offsets = {
-        "ul": (-1, 1), "ur": (1, 1),
-        "ll": (-1, -1), "lr": (1, -1),
+        "ul": (-1, 1),
+        "ur": (1, 1),
+        "ll": (-1, -1),
+        "lr": (1, -1),
     }
 
     for reg, (dx_sign, dy_sign) in region_offsets.items():
@@ -162,6 +167,3 @@ def annotate_features(
             annotations.append(ann)
 
     return annotations
-
-
-

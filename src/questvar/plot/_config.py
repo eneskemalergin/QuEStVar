@@ -24,6 +24,7 @@ Or override fields for your own style::
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -170,10 +171,10 @@ class PlotConfig:
 
     annotate_box_colors: dict[str, dict[str, str]] = field(
         default_factory=lambda: {
-            "Unexplained":    {"bg": "#F5F5F5", "edge": "#C2C0C0"},
-            "Upregulated":    {"bg": "#FFEBEE", "edge": "#780000"},
-            "Downregulated":  {"bg": "#FFF3E0", "edge": "#e36414"},
-            "Equivalent":     {"bg": "#E3F2FD", "edge": "#003049"},
+            "Unexplained": {"bg": "#F5F5F5", "edge": "#C2C0C0"},
+            "Upregulated": {"bg": "#FFEBEE", "edge": "#780000"},
+            "Downregulated": {"bg": "#FFF3E0", "edge": "#e36414"},
+            "Equivalent": {"bg": "#E3F2FD", "edge": "#003049"},
         }
     )
     """Per-status background and edge colours for annotation label boxes."""
@@ -202,9 +203,9 @@ class PlotConfig:
     # ------------------------------------------------------------------
     cv_group_palette: dict[str, str] = field(
         default_factory=lambda: {
-            "<10%":  "#081c15",
-            "<25%":  "#1b4332",
-            "<50%":  "#2d6a4f",
+            "<10%": "#081c15",
+            "<25%": "#1b4332",
+            "<50%": "#2d6a4f",
             "<100%": "#52b788",
             ">100%": "#95d5b2",
         }
@@ -213,18 +214,22 @@ class PlotConfig:
 
     status_colors: dict[str, str] = field(
         default_factory=lambda: {
-            "Unexplained":  "#C2C0C0",
-            "Excluded":     "#565d61",
-            "Upregulated":  "#780000",
+            "Unexplained": "#C2C0C0",
+            "Excluded": "#565d61",
+            "Upregulated": "#780000",
             "Downregulated": "#e36414",
-            "Equivalent":   "#003049",
+            "Equivalent": "#003049",
         }
     )
     """Colour mapping for QuEStVar feature status categories."""
 
     status_order: list[str] = field(
         default_factory=lambda: [
-            "Unexplained", "Excluded", "Upregulated", "Downregulated", "Equivalent"
+            "Unexplained",
+            "Excluded",
+            "Upregulated",
+            "Downregulated",
+            "Equivalent",
         ]
     )
     """Canonical display order for status categories."""
@@ -282,10 +287,9 @@ class PlotConfig:
     # Serialisation helpers
     # ------------------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
-        import dataclasses
         return dataclasses.asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> PlotConfig:
-        fields = {f.name for f in __import__("dataclasses").fields(cls)}
+        fields = {f.name for f in dataclasses.fields(cls)}
         return cls(**{k: v for k, v in d.items() if k in fields})

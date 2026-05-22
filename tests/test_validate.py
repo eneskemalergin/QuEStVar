@@ -104,11 +104,13 @@ class TestValidatePolars:
     def test_all_nan_in_condition(self):
         df = _make_proteomics_df(50, 3)
         nan_arr = np.full(50, np.nan, dtype=np.float64)
-        df = df.with_columns([
-            pl.Series("na1", nan_arr).fill_nan(None),
-            pl.Series("na2", nan_arr).fill_nan(None),
-            pl.Series("na3", nan_arr).fill_nan(None),
-        ])
+        df = df.with_columns(
+            [
+                pl.Series("na1", nan_arr).fill_nan(None),
+                pl.Series("na2", nan_arr).fill_nan(None),
+                pl.Series("na3", nan_arr).fill_nan(None),
+            ]
+        )
         with pytest.raises(ValueError, match="only missing values|only NaN values"):
             validate_and_extract(df, ["s0", "s1", "s2"], ["na1", "na2", "na3"], cv_thr=0.15)
 
@@ -120,12 +122,16 @@ class TestValidatePolars:
             ],
             dtype=np.float64,
         )
-        with pytest.raises(ValueError, match="Parameter 'cond_2' contains replicate columns with only NaN values"):
+        with pytest.raises(
+            ValueError, match="Parameter 'cond_2' contains replicate columns with only NaN values"
+        ):
             validate_and_extract(arr, [0, 1], [2, 3], cv_thr=0.15)
 
     def test_paired_selector_length_mismatch_raises_clear_error(self):
         arr = np.arange(15, dtype=np.float64).reshape(3, 5)
-        with pytest.raises(ValueError, match="Paired analysis requires the same number of replicate columns"):
+        with pytest.raises(
+            ValueError, match="Paired analysis requires the same number of replicate columns"
+        ):
             validate_and_extract(arr, [0, 1], [2, 3, 4], cv_thr=0.15, is_paired=True)
 
     def test_cv_thr_zero(self):
@@ -160,9 +166,7 @@ class TestValidateNumpy:
     def test_basic_extraction(self):
         rng = np.random.default_rng(42)
         arr = rng.lognormal(18, 0.5, (50, 6))
-        s1, s2, pids, c1, c2, meta = validate_and_extract(
-            arr, [0, 1, 2], [3, 4, 5], cv_thr=0.15
-        )
+        s1, s2, pids, c1, c2, meta = validate_and_extract(arr, [0, 1, 2], [3, 4, 5], cv_thr=0.15)
         assert s1.shape == (50, 3)
         assert s2.shape == (50, 3)
         assert len(pids) == 50

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,7 +29,10 @@ def cv_numpy(
         mean = np.mean(x, axis=axis)
         std = np.std(x, axis=axis, ddof=ddof)
 
-    return np.divide(std, mean, out=np.full_like(mean, np.nan), where=mean != 0)
+    return cast(
+        NDArray[np.float64],
+        np.divide(std, mean, out=np.full_like(mean, np.nan), where=mean != 0),
+    )
 
 
 def make_selection_indicator(

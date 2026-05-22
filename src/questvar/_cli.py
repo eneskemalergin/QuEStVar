@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace as _replace
 from typing import Any
 
 import numpy as np
@@ -70,15 +71,39 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run equivalence test",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p_test.add_argument("--data", required=True, help="Path to input file (.parquet, .csv, .tsv, .txt)")
-    p_test.add_argument("--cond-1", required=True, help="Comma-separated column names for condition 1")
-    p_test.add_argument("--cond-2", required=True, help="Comma-separated column names for condition 2")
-    p_test.add_argument("--output", default="results.parquet", help="Output path for results file (.parquet, .csv, or .tsv)")
+    p_test.add_argument(
+        "--data", required=True, help="Path to input file (.parquet, .csv, .tsv, .txt)"
+    )
+    p_test.add_argument(
+        "--cond-1", required=True, help="Comma-separated column names for condition 1"
+    )
+    p_test.add_argument(
+        "--cond-2", required=True, help="Comma-separated column names for condition 2"
+    )
+    p_test.add_argument(
+        "--output",
+        default="results.parquet",
+        help="Output path for results file (.parquet, .csv, or .tsv)",
+    )
     p_test.add_argument("--config", help="YAML config file (optional)")
-    p_test.add_argument("--cv-thr", type=float, default=argparse.SUPPRESS, help="CV threshold for feature selection")
-    p_test.add_argument("--p-thr", type=float, default=argparse.SUPPRESS, help="Adjusted p-value threshold")
-    p_test.add_argument("--df-thr", type=float, default=argparse.SUPPRESS, help="Differential boundary (fold-change units)")
-    p_test.add_argument("--eq-thr", type=float, default=argparse.SUPPRESS, help="Equivalence boundary (fold-change units)")
+    p_test.add_argument(
+        "--cv-thr", type=float, default=argparse.SUPPRESS, help="CV threshold for feature selection"
+    )
+    p_test.add_argument(
+        "--p-thr", type=float, default=argparse.SUPPRESS, help="Adjusted p-value threshold"
+    )
+    p_test.add_argument(
+        "--df-thr",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Differential boundary (fold-change units)",
+    )
+    p_test.add_argument(
+        "--eq-thr",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Equivalence boundary (fold-change units)",
+    )
     p_test.add_argument(
         "--correction",
         type=_parse_correction,
@@ -126,35 +151,130 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run power analysis",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p_power.add_argument("--output", default="power_results.parquet", help="Output path for power results (.parquet, .csv, .tsv, or .json)")
+    p_power.add_argument(
+        "--output",
+        default="power_results.parquet",
+        help="Output path for power results (.parquet, .csv, .tsv, or .json)",
+    )
     p_power.add_argument("--config", help="YAML config file (optional)")
-    p_power.add_argument("--target-sei", type=float, default=argparse.SUPPRESS, help="Minimum SEI threshold for design search")
-    p_power.add_argument("--target-power", type=float, default=argparse.SUPPRESS, help="Minimum power threshold for design search")
-    p_power.add_argument("--eq-thr", type=float, default=argparse.SUPPRESS, help="Single equivalence boundary to evaluate when no grid override is provided")
-    p_power.add_argument("--eq-boundaries", default=argparse.SUPPRESS, help="Comma-separated equivalence boundaries to sweep")
-    p_power.add_argument("--n-prts", "--n-features", dest="n_prts", type=int, default=argparse.SUPPRESS, help="Number of features to simulate per iteration")
-    p_power.add_argument("--n-prts-list", default=argparse.SUPPRESS, help="Comma-separated feature counts to evaluate as a grid")
-    p_power.add_argument("--n-reps", type=int, default=argparse.SUPPRESS, help="Single replicate count to evaluate when no grid override is provided")
-    p_power.add_argument("--n-reps-list", default=argparse.SUPPRESS, help="Comma-separated replicate counts to evaluate")
-    p_power.add_argument("--cv-mean", type=float, default=argparse.SUPPRESS, help="Single mean CV value to evaluate when no grid override is provided")
-    p_power.add_argument("--cv-mean-list", default=argparse.SUPPRESS, help="Comma-separated mean CV values to evaluate")
-    p_power.add_argument("--cv-thr", type=float, default=argparse.SUPPRESS, help="CV threshold for feature selection")
-    p_power.add_argument("--cv-thr-list", default=argparse.SUPPRESS, help="Comma-separated CV thresholds to evaluate")
-    p_power.add_argument("--p-thr", type=float, default=argparse.SUPPRESS, help="Adjusted p-value threshold")
-    p_power.add_argument("--df-thr", type=float, default=argparse.SUPPRESS, help="Differential boundary (fold-change units)")
+    p_power.add_argument(
+        "--target-sei",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Minimum SEI threshold for design search",
+    )
+    p_power.add_argument(
+        "--target-power",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Minimum power threshold for design search",
+    )
+    p_power.add_argument(
+        "--eq-thr",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Single equivalence boundary to evaluate when no grid override is provided",
+    )
+    p_power.add_argument(
+        "--eq-boundaries",
+        default=argparse.SUPPRESS,
+        help="Comma-separated equivalence boundaries to sweep",
+    )
+    p_power.add_argument(
+        "--n-prts",
+        "--n-features",
+        dest="n_prts",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Number of features to simulate per iteration",
+    )
+    p_power.add_argument(
+        "--n-prts-list",
+        default=argparse.SUPPRESS,
+        help="Comma-separated feature counts to evaluate as a grid",
+    )
+    p_power.add_argument(
+        "--n-reps",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Single replicate count to evaluate when no grid override is provided",
+    )
+    p_power.add_argument(
+        "--n-reps-list",
+        default=argparse.SUPPRESS,
+        help="Comma-separated replicate counts to evaluate",
+    )
+    p_power.add_argument(
+        "--cv-mean",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Single mean CV value to evaluate when no grid override is provided",
+    )
+    p_power.add_argument(
+        "--cv-mean-list",
+        default=argparse.SUPPRESS,
+        help="Comma-separated mean CV values to evaluate",
+    )
+    p_power.add_argument(
+        "--cv-thr", type=float, default=argparse.SUPPRESS, help="CV threshold for feature selection"
+    )
+    p_power.add_argument(
+        "--cv-thr-list", default=argparse.SUPPRESS, help="Comma-separated CV thresholds to evaluate"
+    )
+    p_power.add_argument(
+        "--p-thr", type=float, default=argparse.SUPPRESS, help="Adjusted p-value threshold"
+    )
+    p_power.add_argument(
+        "--df-thr",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Differential boundary (fold-change units)",
+    )
     p_power.add_argument(
         "--correction",
         type=_parse_correction,
         default=argparse.SUPPRESS,
         help="Multiple testing correction method: bonferroni, holm, hochberg, fdr, fdr_bh, BY, qvalue, or none.",
     )
-    p_power.add_argument("--int-mu", type=float, default=argparse.SUPPRESS, help="Mean log-intensity for the simulator")
-    p_power.add_argument("--int-sd", type=float, default=argparse.SUPPRESS, help="Standard deviation of log-intensity for the simulator")
-    p_power.add_argument("--cv-k", type=float, default=argparse.SUPPRESS, help="Shape parameter for the gamma CV simulator")
-    p_power.add_argument("--cv-theta", type=float, default=argparse.SUPPRESS, help="Scale parameter for the gamma CV simulator")
-    p_power.add_argument("--random-seed", type=int, default=argparse.SUPPRESS, help="Base random seed for deterministic power simulations")
-    p_power.add_argument("--n-iterations", type=int, default=argparse.SUPPRESS, help="Monte Carlo iterations per design point")
-    p_power.add_argument("--n-jobs", type=int, default=argparse.SUPPRESS, help="Number of parallel workers")
+    p_power.add_argument(
+        "--int-mu",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Mean log-intensity for the simulator",
+    )
+    p_power.add_argument(
+        "--int-sd",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Standard deviation of log-intensity for the simulator",
+    )
+    p_power.add_argument(
+        "--cv-k",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Shape parameter for the gamma CV simulator",
+    )
+    p_power.add_argument(
+        "--cv-theta",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Scale parameter for the gamma CV simulator",
+    )
+    p_power.add_argument(
+        "--random-seed",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Base random seed for deterministic power simulations",
+    )
+    p_power.add_argument(
+        "--n-iterations",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Monte Carlo iterations per design point",
+    )
+    p_power.add_argument(
+        "--n-jobs", type=int, default=argparse.SUPPRESS, help="Number of parallel workers"
+    )
 
     p_plot = sub.add_parser(
         "plot",
@@ -205,7 +325,16 @@ def _cmd_test(args: argparse.Namespace) -> None:
 
     config = TestConfig.from_yaml(args.config) if args.config else None
     overrides = {}
-    for field in ["cv_thr", "p_thr", "df_thr", "eq_thr", "correction", "allow_missing", "is_paired", "var_equal"]:
+    for field in [
+        "cv_thr",
+        "p_thr",
+        "df_thr",
+        "eq_thr",
+        "correction",
+        "allow_missing",
+        "is_paired",
+        "var_equal",
+    ]:
         if hasattr(args, field):
             overrides[field] = getattr(args, field)
     if hasattr(args, "input_scale"):
@@ -254,19 +383,29 @@ def _cmd_power(args: argparse.Namespace) -> None:
             explicit_scalar_flags.add(field)
 
     if hasattr(args, "eq_boundaries"):
-        overrides["eq_boundaries"] = tuple(_csv_items(args.eq_boundaries, caster=float, label="eq_boundaries"))
+        overrides["eq_boundaries"] = tuple(
+            _csv_items(args.eq_boundaries, caster=float, label="eq_boundaries")
+        )
         explicit_grid_flags.add("eq_boundaries")
     if hasattr(args, "n_prts_list"):
-        overrides["n_prts_grid"] = tuple(_csv_items(args.n_prts_list, caster=int, label="n_prts_list"))
+        overrides["n_prts_grid"] = tuple(
+            _csv_items(args.n_prts_list, caster=int, label="n_prts_list")
+        )
         explicit_grid_flags.add("n_prts_grid")
     if hasattr(args, "n_reps_list"):
-        overrides["n_reps_grid"] = tuple(_csv_items(args.n_reps_list, caster=int, label="n_reps_list"))
+        overrides["n_reps_grid"] = tuple(
+            _csv_items(args.n_reps_list, caster=int, label="n_reps_list")
+        )
         explicit_grid_flags.add("n_reps_grid")
     if hasattr(args, "cv_mean_list"):
-        overrides["cv_mean_grid"] = tuple(_csv_items(args.cv_mean_list, caster=float, label="cv_mean_list"))
+        overrides["cv_mean_grid"] = tuple(
+            _csv_items(args.cv_mean_list, caster=float, label="cv_mean_list")
+        )
         explicit_grid_flags.add("cv_mean_grid")
     if hasattr(args, "cv_thr_list"):
-        overrides["cv_thr_grid"] = tuple(_csv_items(args.cv_thr_list, caster=float, label="cv_thr_list"))
+        overrides["cv_thr_grid"] = tuple(
+            _csv_items(args.cv_thr_list, caster=float, label="cv_thr_list")
+        )
         explicit_grid_flags.add("cv_thr_grid")
 
     if "eq_thr" in explicit_scalar_flags and "eq_boundaries" not in explicit_grid_flags:
@@ -279,7 +418,6 @@ def _cmd_power(args: argparse.Namespace) -> None:
         overrides["cv_thr_grid"] = (float(overrides["cv_thr"]),)
 
     cfg = cfg.replace(**overrides)
-    from dataclasses import replace as _replace
 
     cfg = _replace(
         cfg,

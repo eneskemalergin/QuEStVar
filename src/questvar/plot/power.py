@@ -1,6 +1,6 @@
 """Power analysis plot for QuEStVar.
 
-The main entry point is :func:`plot_power`, which produces a two-panel figure:
+The main entry point is :func:`power_profile`, which produces a two-panel figure:
 
 * Left panel - line plot of estimated power vs equivalence boundary
   (``eq_thr``), one line per replicate count, with +/-CI shading.
@@ -18,13 +18,13 @@ Examples
 --------
 Minimal usage::
 
-    from questvar.plot import plot_power
-    fig = plot_power(results)
+    from questvar.plot import power_profile
+    fig = power_profile(results)
     fig.savefig("power.png", dpi=150, bbox_inches="tight")
 
 Custom style::
 
-    from questvar.plot import plot_power, PlotConfig
+    from questvar.plot import power_profile, PlotConfig
     cfg = PlotConfig(
         fig_facecolor="white",
         ax_facecolor="#f5f5f5",
@@ -33,7 +33,7 @@ Custom style::
         tick_color="#666666",
         spine_color="#cccccc",
     )
-    fig = plot_power(results, title="Study design - power curve", config=cfg)
+    fig = power_profile(results, title="Study design - power curve", config=cfg)
 """
 
 from __future__ import annotations
@@ -54,7 +54,9 @@ if TYPE_CHECKING:
 
 
 def _power_from_sei(
-    sei: float, target_sei_val: float, cv_mean_val: float,
+    sei: float,
+    target_sei_val: float,
+    cv_mean_val: float,
 ) -> float:
     """Apply the same power formula as _summarize_design_grid."""
     sei_ceiling = 1.0 - cv_mean_val
@@ -119,9 +121,7 @@ def plot_power(
     pc = config or PlotConfig()
 
     if ci_method not in ("quantile", "se"):
-        raise ValueError(
-            f"Parameter 'ci_method' must be 'quantile' or 'se', got {ci_method!r}."
-        )
+        raise ValueError(f"Parameter 'ci_method' must be 'quantile' or 'se', got {ci_method!r}.")
     if ci_method == "se":
         ci_mult = ci if ci is not None else pc.ci_multiplier
         if ci_mult < 0:
@@ -129,14 +129,16 @@ def plot_power(
     else:
         ci_level = ci if ci is not None else 0.90
         if not 0 < ci_level < 1:
-            raise ValueError(f"Parameter 'ci' must be in (0, 1) for ci_method='quantile', got {ci_level}")
+            raise ValueError(
+                f"Parameter 'ci' must be in (0, 1) for ci_method='quantile', got {ci_level}"
+            )
 
     # ------------------------------------------------------------------
     # Extract lines: n_reps -> [(eq_thr, power, lo, hi), ...]
     # where lo/hi define the shading band.
     # ------------------------------------------------------------------
     joint_rows = [r for r in results.design_grid if r["parameter"] == "eq_thr_n_reps"]
-    eq_rows    = [r for r in results.design_grid if r["parameter"] == "eq_thr"]
+    eq_rows = [r for r in results.design_grid if r["parameter"] == "eq_thr"]
 
     source_rows = joint_rows if joint_rows else eq_rows
     if not source_rows:
@@ -146,7 +148,7 @@ def plot_power(
         )
 
     available_n_reps = sorted({int(r["n_reps"]) for r in source_rows})
-    selected_n_reps  = [nr for nr in available_n_reps if n_reps is None or nr in n_reps]
+    selected_n_reps = [nr for nr in available_n_reps if n_reps is None or nr in n_reps]
 
     lines: dict[int, tuple[list[float], list[float], list[float], list[float]]] = {}
     for nr in selected_n_reps:
@@ -183,16 +185,16 @@ def plot_power(
     # ------------------------------------------------------------------
     # Pull scalar parameters from config dict
     # ------------------------------------------------------------------
-    cfg_dict: dict = results.config if isinstance(results.config, dict) else {}
-    cv_mean      = float(cfg_dict.get("cv_mean", 0.20))
-    cv_k         = float(cfg_dict.get("cv_k", 2.0))
-    cv_theta     = float(cfg_dict.get("cv_theta", 0.5))
-    n_prts       = cfg_dict.get("n_prts")
+    cfg_dict: dict[str, Any] = results.config if isinstance(results.config, dict) else {}
+    cv_mean = float(cfg_dict.get("cv_mean", 0.20))
+    cv_k = float(cfg_dict.get("cv_k", 2.0))
+    cv_theta = float(cfg_dict.get("cv_theta", 0.5))
+    n_prts = cfg_dict.get("n_prts")
     target_power = float(cfg_dict.get("target_power", 0.80))
-    target_sei   = cfg_dict.get("target_sei")
-    correction   = cfg_dict.get("correction", "fdr")
+    target_sei = cfg_dict.get("target_sei")
+    correction = cfg_dict.get("correction", "fdr")
     n_iterations = cfg_dict.get("n_iterations")
-    p_thr        = cfg_dict.get("p_thr")
+    p_thr = cfg_dict.get("p_thr")
 
     # ------------------------------------------------------------------
     # CV distribution sample (gamma, scaled to cv_mean)
@@ -201,25 +203,25 @@ def plot_power(
     # computation, so a hardcoded seed is acceptable.
     # ------------------------------------------------------------------
     rng = np.random.default_rng(0)
-    cv_raw    = rng.gamma(cv_k, cv_theta, pc.cv_sample_size).astype(float)
+    cv_raw = rng.gamma(cv_k, cv_theta, pc.cv_sample_size).astype(float)
     cv_sample = cv_raw * cv_mean / cv_raw.mean()
 
     # ------------------------------------------------------------------
     # Build figure - 1 row x 2 cols; annotation via fig.text
     # ------------------------------------------------------------------
     fig = plt.figure(figsize=figsize or pc.figsize, facecolor=pc.fig_facecolor)
-    gs  = GridSpec(
-        1, 2,
+    gs = GridSpec(
+        1,
+        2,
         figure=fig,
         width_ratios=[pc.main_width_ratio, pc.side_width_ratio],
         wspace=pc.panel_wspace,
     )
     ax_main = fig.add_subplot(gs[0, 0])
-    ax_cv   = fig.add_subplot(gs[0, 1])
+    ax_cv = fig.add_subplot(gs[0, 1])
 
     # Reserve headroom for title + annotation (keeps axes from crowding the top)
     fig.subplots_adjust(top=pc.top_margin)
-
 
     # ------------------------------------------------------------------
     # Main panel: one line per n_reps
@@ -231,16 +233,15 @@ def plot_power(
     _line_colors: list[Any] = [pc.palette[0]]
     if n_lines > 1:
         _cmap = plt.get_cmap(pc.multi_line_cmap)
-        _line_colors = [
-            _cmap(0.35 + 0.55 * i / (n_lines - 1)) for i in range(n_lines)
-        ]
+        _line_colors = [_cmap(0.35 + 0.55 * i / (n_lines - 1)) for i in range(n_lines)]
 
     for idx, nr in enumerate(sorted(lines)):
         xvals, yvals, los, his = lines[nr]
         color = _line_colors[idx]
 
         ax_main.plot(
-            xvals, yvals,
+            xvals,
+            yvals,
             color=color,
             linewidth=pc.line_width,
             marker=pc.marker,
@@ -276,11 +277,16 @@ def plot_power(
     # in axes-fraction space and y in data space so labels track the lines.
     _blend = blended_transform_factory(ax_main.transAxes, ax_main.transData)
     _badge_kw: dict[str, Any] = dict(
-        transform=_blend, ha="left", va="center", fontsize=pc.annotation_fontsize,
-        zorder=6, clip_on=False,
+        transform=_blend,
+        ha="left",
+        va="center",
+        fontsize=pc.annotation_fontsize,
+        zorder=6,
+        clip_on=False,
     )
     ax_main.text(
-        0.01, 1.0,
+        0.01,
+        1.0,
         pc.ideal_label,
         color=pc.ideal_color,
         bbox=dict(
@@ -293,7 +299,8 @@ def plot_power(
         **_badge_kw,
     )
     ax_main.text(
-        0.01, target_power,
+        0.01,
+        target_power,
         pc.target_label_template.format(value=target_power),
         color=pc.target_color,
         bbox=dict(
@@ -308,7 +315,7 @@ def plot_power(
 
     _legend_axis_labels = {"n_reps": "# of Rep", "cv_mean": "CV mean"}
     _legend_param = "n_reps" if joint_rows or eq_rows else "n_reps"
-    _legend_title  = _legend_axis_labels.get(_legend_param, _legend_param)
+    _legend_title = _legend_axis_labels.get(_legend_param, _legend_param)
     ax_main.set_ylim(0, 1.06)
     ax_main.legend(
         fontsize=pc.legend_fontsize,
@@ -380,14 +387,16 @@ def plot_power(
     style_ax(ax_cv, pc, ylabel="CV (ratio)", ylabel_right=True)
 
     # Stat text centered below the CV panel (outside the axes frame)
-    cv_mean_val   = float(np.mean(cv_sample))
+    cv_mean_val = float(np.mean(cv_sample))
     cv_median_val = float(np.median(cv_sample))
     _stat_transform = offset_copy(ax_cv.transAxes, fig=fig, x=0, y=-14, units="points")
     ax_cv.text(
-        0.5, 0.0,
+        0.5,
+        0.0,
         f"mean = {cv_mean_val:.3f}  |  median = {cv_median_val:.3f}",
         transform=_stat_transform,
-        ha="center", va="top",
+        ha="center",
+        va="top",
         fontsize=pc.box_stat_fontsize,
         color=pc.box_stat_color,
         clip_on=False,
@@ -411,7 +420,8 @@ def plot_power(
     # Annotation - 5 pts above the axes top for breathing room, then title above that
     annot_transform = offset_copy(ax_main.transAxes, fig=fig, x=0, y=5, units="points")
     ax_main.text(
-        0.0, 1.0,
+        0.0,
+        1.0,
         pc.annotation_sep.join(parts),
         transform=annot_transform,
         color=pc.annotation_color,
@@ -427,6 +437,6 @@ def plot_power(
 
     # Expose axes as named attributes so callers can make post-hoc adjustments
     fig.ax_main = ax_main  # type: ignore[attr-defined]
-    fig.ax_cv   = ax_cv    # type: ignore[attr-defined]
+    fig.ax_cv = ax_cv  # type: ignore[attr-defined]
 
     return fig

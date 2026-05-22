@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Any
+
+import yaml
 
 VALID_CORRECTIONS: set[str | None] = {
     "bonferroni",
@@ -16,7 +19,7 @@ VALID_CORRECTIONS: set[str | None] = {
 
 class _ConfigMixin:
     @classmethod
-    def from_dict(cls, d: dict):
+    def from_dict(cls, d: dict[str, Any]) -> Any:
         valid = {
             k: v
             for k, v in d.items()
@@ -25,24 +28,20 @@ class _ConfigMixin:
         return cls(**valid)
 
     @classmethod
-    def from_yaml(cls, path: str):
-        import yaml
-
+    def from_yaml(cls, path: str) -> Any:
         with open(path) as f:
             return cls.from_dict(yaml.safe_load(f))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         fields = self.__dataclass_fields__  # type: ignore[attr-defined]
         return {f.name: _plain_value(getattr(self, f.name)) for f in fields.values()}
 
     def to_yaml(self, path: str) -> None:
-        import yaml
-
         with open(path, "w") as f:
             yaml.dump(self.to_dict(), f)
 
-    def replace(self, **overrides):
-        return replace(self, **overrides)
+    def replace(self, **overrides: Any) -> Any:
+        return replace(self, **overrides)  # type: ignore[type-var]
 
 
 @dataclass(frozen=True)
@@ -148,9 +147,7 @@ class PowerConfig(_ConfigMixin):
         if self.n_reps < 2:
             raise ValueError(f"Parameter 'n_reps' must be >= 2, got {self.n_reps}")
         if not 0 < self.cv_mean < 2:
-            raise ValueError(
-                f"Parameter 'cv_mean' must be a ratio in (0, 2), got {self.cv_mean}"
-            )
+            raise ValueError(f"Parameter 'cv_mean' must be a ratio in (0, 2), got {self.cv_mean}")
         if self.cv_k <= 0:
             raise ValueError(f"Parameter 'cv_k' must be > 0, got {self.cv_k}")
         if self.cv_theta <= 0:
@@ -158,17 +155,11 @@ class PowerConfig(_ConfigMixin):
         if self.int_sd <= 0:
             raise ValueError(f"Parameter 'int_sd' must be > 0, got {self.int_sd}")
         if self.n_iterations < 1:
-            raise ValueError(
-                f"Parameter 'n_iterations' must be >= 1, got {self.n_iterations}"
-            )
+            raise ValueError(f"Parameter 'n_iterations' must be >= 1, got {self.n_iterations}")
         if not 0 < self.target_sei <= 1:
-            raise ValueError(
-                f"Parameter 'target_sei' must be in (0, 1], got {self.target_sei}"
-            )
+            raise ValueError(f"Parameter 'target_sei' must be in (0, 1], got {self.target_sei}")
         if not 0 < self.target_power <= 1:
-            raise ValueError(
-                f"Parameter 'target_power' must be in (0, 1], got {self.target_power}"
-            )
+            raise ValueError(f"Parameter 'target_power' must be in (0, 1], got {self.target_power}")
         if self.correction not in VALID_CORRECTIONS:
             raise ValueError(
                 f"Parameter 'correction' has unsupported value {self.correction!r}. "
@@ -224,7 +215,7 @@ def _as_int_tuple(values: tuple[int, ...] | list[int]) -> tuple[int, ...]:
     return tuple(int(value) for value in values)
 
 
-def _plain_value(value):
+def _plain_value(value: Any) -> Any:
     if isinstance(value, tuple | list):
         return [_plain_value(item) for item in value]
     if isinstance(value, dict):

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 
 from questvar._api import PowerResults
 from questvar.power._simulate import simulate_data
@@ -118,7 +118,9 @@ class TestPowerAnalysis:
         )
         heatmap_rows = [row for row in results.design_grid if row["parameter"] == "eq_thr_n_reps"]
         assert len(heatmap_rows) == 4
-        cube_rows = [row for row in results.design_grid if row["parameter"] == "eq_thr_n_reps_cv_thr"]
+        cube_rows = [
+            row for row in results.design_grid if row["parameter"] == "eq_thr_n_reps_cv_thr"
+        ]
         assert len(cube_rows) == 8
 
     def test_more_reps_more_power(self):
@@ -131,9 +133,7 @@ class TestPowerAnalysis:
             n_jobs=1,
         )
         power_by_rep = {
-            r["n_reps"]: r["power"]
-            for r in results.design_grid
-            if r["parameter"] == "n_reps"
+            r["n_reps"]: r["power"] for r in results.design_grid if r["parameter"] == "n_reps"
         }
         assert power_by_rep[5] <= power_by_rep[20] + 0.15
 
@@ -150,7 +150,9 @@ class TestPowerAnalysis:
         left = run_power_analysis(**kwargs)
         right = run_power_analysis(**kwargs)
 
-        assert [row["seed"] for row in left.run_metrics] == [row["seed"] for row in right.run_metrics]
+        assert [row["seed"] for row in left.run_metrics] == [
+            row["seed"] for row in right.run_metrics
+        ]
         for left_row, right_row in zip(left.design_grid, right.design_grid, strict=False):
             assert left_row.keys() == right_row.keys()
             for key in left_row:
@@ -486,6 +488,7 @@ class TestPowerWorkflowImprovements:
     def test_sei_convergence_is_nan_when_sei_zero(self):
         # When sei_mean == 0 (very strict cv_thr excludes all), convergence is nan.
         import math
+
         results = run_power_analysis(
             eq_boundaries=np.array([0.5]),
             n_reps_list=[3],

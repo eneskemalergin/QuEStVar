@@ -6,7 +6,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def close_matplotlib_figures() -> None:
-	try:
-		yield
-	finally:
-		plt.close("all")
+    try:
+        yield
+    finally:
+        plt.close("all")
