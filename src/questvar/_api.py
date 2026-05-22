@@ -686,6 +686,7 @@ class PowerResults:
     diagnostics : dict
         Runtime diagnostics (convergence, timing, seed policy).
     """
+
     """Container for power analysis results.
 
     Attributes
@@ -729,6 +730,7 @@ class PowerResults:
         -------
         str
         """
+
         def _numeric_range(rows: list[dict[str, Any]], key: str) -> str:
             values: list[float] = []
             for row in rows:

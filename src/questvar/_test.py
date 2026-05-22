@@ -9,7 +9,6 @@ from questvar._api import QuestVar, TestResults
 
 
 def test(
-
     data: pl.DataFrame | np.ndarray,
     cond_1: list[str] | list[int],
     cond_2: list[str] | list[int],

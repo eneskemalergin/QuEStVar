@@ -20,6 +20,7 @@ class _ConfigMixin:
 
     Used by TestConfig and PowerConfig. Not intended for direct use.
     """
+
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Any:
         valid = {
@@ -69,6 +70,7 @@ class TestConfig(_ConfigMixin):
     full parameter list. See the configuration guide for details
     on each parameter.
     """
+
     __test__ = False
     cv_thr: float = 1.0
     p_thr: float = 0.05
@@ -117,6 +119,7 @@ class PowerConfig(_ConfigMixin):
     full parameter list. See the configuration guide for details
     on each parameter.
     """
+
     n_prts: int = 5000
     n_reps: int = 5
     cv_mean: float = 0.20
