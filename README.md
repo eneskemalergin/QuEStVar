@@ -8,174 +8,97 @@
 </p>
 
 <p align="center">
-    <a href="#installation"><img src="https://img.shields.io/badge/version-0.1.0-0f766e?style=for-the-badge" alt="Version 0.1.0" /></a>
-    <a href="ref/statistical-testing-for-protein-equivalence-identifies-core-functional-modules-conserved-across-360-cancer-cell-lines.pdf"><img src="https://img.shields.io/badge/paper-linked-7c3aed?style=for-the-badge" alt="Paper linked" /></a>
-    <a href="#requirements"><img src="https://img.shields.io/badge/python-3.12%2B-f59e0b?style=for-the-badge" alt="Python 3.12+" /></a>
-    <a href="#requirements"><img src="https://img.shields.io/badge/numpy-2.0%2B-2563eb?style=for-the-badge" alt="NumPy 2.0+" /></a>
-    <a href="#requirements"><img src="https://img.shields.io/badge/polars-1.0%2B-06b6d4?style=for-the-badge" alt="Polars 1.0+" /></a>
-    <a href="#requirements"><img src="https://img.shields.io/badge/scipy-1.10%2B-8b5cf6?style=for-the-badge" alt="SciPy 1.10+" /></a>
+    <a href="https://pypi.org/project/questvar/"><img src="https://img.shields.io/pypi/v/questvar?style=for-the-badge&color=0f766e" alt="Version 0.1.0" /></a>
+    <a href="ref/statistical-testing-for-protein-equivalence-identifies-core-functional-modules-conserved-across-360-cancer-cell-lines.pdf"><img src="https://img.shields.io/badge/paper-linked-7c3aed?style=for-the-badge" alt="Paper" /></a>
+    <a href="https://eneskemalergin.github.io/QuEStVar/"><img src="https://img.shields.io/badge/docs-site-0891b2?style=for-the-badge" alt="Documentation" /></a>
+    <a href="https://github.com/eneskemalergin/QuEStVar/actions"><img src="https://img.shields.io/github/actions/workflow/status/eneskemalergin/QuEStVar/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI" alt="CI" /></a>
 </p>
-
 <p align="center">
-    <a href="#installation"><img src="https://img.shields.io/badge/install-uv%20or%20pip-16a34a?style=for-the-badge&logo=python&logoColor=white" alt="Install with uv or pip" /></a>
-    <a href="#quick-start"><img src="https://img.shields.io/badge/api-QuestVar-0f766e?style=for-the-badge&logo=python&logoColor=white" alt="Python API" /></a>
-    <a href="#cli"><img src="https://img.shields.io/badge/cli-questvar-111827?style=for-the-badge&logo=terminal&logoColor=white" alt="CLI questvar" /></a>
-    <a href="#plotting"><img src="https://img.shields.io/badge/plot-antlers-ef4444?style=for-the-badge&logo=matplotlib&logoColor=white" alt="Antlers plot" /></a>
+    <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12%20|%203.13%20|%203.14-f59e0b?style=for-the-badge" alt="Python 3.12+" /></a>
+    <a href="#requirements"><img src="https://img.shields.io/badge/numpy-2.0%2B-2563eb?style=for-the-badge&logo=numpy&logoColor=white" alt="NumPy 2.0+" /></a>
+    <a href="#requirements"><img src="https://img.shields.io/badge/scipy-1.10%2B-8b5cf6?style=for-the-badge&logo=scipy&logoColor=white" alt="SciPy 1.10+" /></a>
+    <a href="#requirements"><img src="https://img.shields.io/badge/polars-1.0%2B-cd7c2f?style=for-the-badge&logo=polars&logoColor=white" alt="Polars 1.0+" /></a>
+    <a href="#requirements"><img src="https://img.shields.io/badge/matplotlib-3.10%2B-003049?style=for-the-badge&logo=python&logoColor=white" alt="Matplotlib 3.10+" /></a>
+    <a href="#requirements"><img src="https://img.shields.io/badge/pyyaml-6.0%2B-6b2800?style=for-the-badge&logo=python&logoColor=white" alt="PyYAML 6.0+" /></a>
 </p>
 
-QuEStVar is a testing utility for paired equivalence and difference testing. It is built around the logic in [Statistical testing for protein equivalence identifies core functional modules conserved across 360 cancer cell lines](https://pubs.acs.org/doi/10.1021/acs.jproteome.4c00131).
+QuEStVar is a testing utility for paired equivalence and difference testing. It is packaged and easy to access built around the logic we published with biological application: [Statistical testing for protein equivalence identifies core functional modules conserved across 360 cancer cell lines](https://pubs.acs.org/doi/10.1021/acs.jproteome.4c00131).
 
 The point is simple. A non-significant difference test does not mean two groups are equivalent. QuEStVar adds an equivalence test so that case is explicit instead of implied.
 
-The package uses NumPy and SciPy for computation and Polars for data I/O. Python API, YAML-backed configuration, and CLI entry points all point at the same analysis engine.
+**v0.1.0 is a stable minimum working version.** The core workflow is complete and tested. Future releases will add multi-comparison analysis, expanded visualization, and deeper validation tools.
 
 ## Features
 
 - Vectorized difference and equivalence testing across entire feature tables
-- CV filtering before statistical testing
-- Multiple testing correction with BH-FDR, Holm, Bonferroni, Hochberg, BY, and q-value paths
-- Antler's plot for signed `-log10(p)` visualisation
-- Power analysis for equivalence boundary planning
-- Polars-first input and output, with NumPy arrays supported at the computation boundary
-
-## Requirements
-
-- Python 3.12 or newer
-- NumPy 2.0 or newer
-- Polars 1.0 or newer
-- PyYAML 6.0 or newer
-- SciPy 1.10 or newer
-- Matplotlib 3.0 or newer
+- CV quality filtering before statistical testing
+- Seven multiple testing correction methods: BH-FDR, Bonferroni, Holm, Hochberg, BY, q-value, or none
+- Antler plot combining TOST and t-test results
+- Eight-panel summary figure
+- Power analysis for experiment planning
+- CLI, Python API, and YAML config with identical results
+- CI-tested on Linux, macOS, and Windows
 
 ## Installation
 
-From a local checkout:
-
 ```bash
-uv pip install -e .
+pip install questvar[plot,yaml]
 ```
 
-With pip:
+For the core engine only (no plotting, no YAML config):
 
 ```bash
-pip install -e .
+pip install questvar
 ```
 
-## Quick Start
+## Quick start
 
 ```python
-import questvar as qv
+import polars as pl
+from questvar import QuestVar
 
-qv_obj = qv.QuestVar(cv_thr=0.15, p_thr=0.05, df_thr=1.0, eq_thr=0.5)
-results = qv_obj.test(
-    data,
-    cond_1=["Control_1", "Control_2", "Control_3"],
-    cond_2=["Treated_1", "Treated_2", "Treated_3"],
-)
-
+df = pl.read_csv("data/demo_realistic.tsv", separator="\t")
+qv = QuestVar(cv_thr=1.0, eq_thr=0.5, df_thr=1.0, p_thr=0.05, correction="fdr")
+results = qv.test(df, cond_1=["c1_0","c1_1","c1_2"], cond_2=["c2_0","c2_1","c2_2"])
 print(results.summary())
-results.save("results.parquet")
-results.plot()
+
+# Eight-panel summary figure
+results.plot(cond_1_label="Control", cond_2_label="Treatment")
 ```
 
-## YAML Config
+![Summary plot](assets/summary_plot.png)
 
-The library can build a `QuestVar` object from a YAML config file.
+Three statuses appear. Equivalent (+1) means the TOST test is significant and |log2FC| is below the equivalence boundary. Differential (-1) means the t-test is significant and |log2FC| is above the difference boundary. Not significant (0) means neither test was decisive. Excluded features failed the CV quality filter, some were testable but very high CV, and some were untestable due to missing values or zero variance (shows the stats in panel G.)
 
-```python
-import questvar as qv
+## Documentation
 
-qv_obj = qv.QuestVar.from_yaml("config.yaml")
-results = qv_obj.test(data, cond_1=["Control_1", "Control_2"], cond_2=["Treated_1", "Treated_2"])
-```
+Full documentation, tutorials, and API reference are at the [documentation site](https://eneskemalergin.github.io/QuEStVar/).
 
-Example configuration:
-
-```yaml
-cv_thr: 0.15
-p_thr: 0.05
-df_thr: 1.0
-eq_thr: 0.5
-correction: fdr
-is_log2: false
-var_equal: false
-is_paired: false
-allow_missing: false
-```
-
-`is_log2` controls whether QuEStVar should log-transform the measurement matrix internally. The default is `is_log2: false`, which means QuEStVar expects raw positive intensities. In that mode, CV is computed directly on the raw values, then the matrix is clipped at `1e-300` and transformed with `log2` for the statistical tests. Set `is_log2: true` only when the input already contains log2-scale values.
-
-The practical rule is strict: the user must decide whether the matrix is raw or already log2. QuEStVar does not infer that safely. CV is always computed on the raw scale. If you provide raw data, QuEStVar uses it directly for CV and then log2-transforms for testing. If you provide log2 data, QuEStVar back-transforms with `2 ** x` for CV only, while the statistical tests continue to run on the original log2 values.
+- [Quick start tutorial](https://eneskemalergin.github.io/QuEStVar/notebooks/quick_start/)
+- [Power analysis tutorial](https://eneskemalergin.github.io/QuEStVar/notebooks/power_analysis/)
+- [Configuration guide](https://eneskemalergin.github.io/QuEStVar/guides/configuration/)
+- [Plotting guide](https://eneskemalergin.github.io/QuEStVar/guides/plotting/)
+- [CLI reference](https://eneskemalergin.github.io/QuEStVar/guides/cli/)
+- [API reference](https://eneskemalergin.github.io/QuEStVar/api/questvar/)
 
 ## CLI
 
-The package exposes a `questvar` command.
-
 ```bash
-questvar test \
-  --data input.parquet \
-  --cond-1 Control_1,Control_2,Control_3 \
-  --cond-2 Treated_1,Treated_2,Treated_3 \
-    --input-scale raw \
-  --output results.parquet
-```
-
-Use `--input-scale log2` when the file already contains log2-scale measurements.
-
-Power analysis:
-
-```bash
-questvar power \
-  --eq-boundaries 0.1,0.3,0.5,0.7,0.9 \
-  --n-reps-list 3,5,10,20 \
-    --cv-mean-list 0.15,0.275,0.40 \
-  --output power_results.parquet
-```
-
-Plotting:
-
-```bash
+questvar test --data input.parquet --cond-1 A1,A2,A3 --cond-2 B1,B2,B3 --output results.parquet
+questvar power --eq-boundaries 0.1,0.3,0.5 --n-reps-list 3,5,10 --output power_results.parquet
 questvar plot --type antlers --results results.parquet --output antlers.png
-questvar plot --type power --results power_results.parquet --output power_profile.png
 ```
 
-## Plotting
+## Roadmap
 
-The main figure is Antler's plot. It uses signed `-log10(p)` on the y axis and `log2 fold change` on the x axis. Equivalent features appear above zero, differential features below zero.
-
-You can also call the plotting helpers directly:
-
-```python
-results.plot()
-```
-
-## Public API
-
-```python
-import questvar as qv
-
-results = qv.test(data, cond_1=["A1", "A2"], cond_2=["B1", "B2"])
-power = qv.run_power_analysis(
-    eq_boundaries=[0.3, 0.5, 0.7],
-    n_reps_list=[3, 5, 10],
-    cv_mean_list=[0.15, 0.275, 0.40],
-    n_prts=10000,
-    n_iterations=10,
-    target_power=0.8,
-)
-```
-
-The main objects are `QuestVar`, `TestResults`, and `PowerResults`.
-
-## Project Notes
-
-This repository is a rewrite of the QuEStVar analysis logic from the manuscript above. The current codebase keeps the computation path small and explicit. It does not include imputation, clustering, enrichment analysis, or PCA.
-
-Paired testing requires equal group sizes. Missing values are handled with nan-aware summary statistics at the boundary, not with built-in imputation.
+- **Multi-comparison analysis**: metadata-driven pair generation, batch execution, per-pair and per-feature summaries.
+- **Visualization expansion**: stacked bar plots, RSM scatter, status heatmaps, agreement matrix for sophisticated summaries across multiple comparisons.
+- **Validation tools**: stability analysis, regression golden files, expanded hypothesis tests.
+- **Documentation and publishing**: mkdocstrings site, tutorial notebooks, PyPI release.
 
 ## License
 
-MIT
+MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 

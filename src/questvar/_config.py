@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-import yaml
-
 VALID_CORRECTIONS: set[str | None] = {
     "bonferroni",
     "holm",
@@ -18,6 +16,10 @@ VALID_CORRECTIONS: set[str | None] = {
 
 
 class _ConfigMixin:
+    """Mixin providing YAML serialization and dict-based construction.
+
+    Used by TestConfig and PowerConfig. Not intended for direct use.
+    """
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Any:
         valid = {
@@ -29,14 +31,29 @@ class _ConfigMixin:
 
     @classmethod
     def from_yaml(cls, path: str) -> Any:
-        with open(path) as f:
-            return cls.from_dict(yaml.safe_load(f))
+        try:
+            import yaml
+        except ImportError:
+            raise ImportError(
+                "PyYAML is required for YAML config support. Install it with: pip install pyyaml"
+            ) from None
+        try:
+            with open(path) as f:
+                return cls.from_dict(yaml.safe_load(f))
+        except FileNotFoundError:
+            raise
 
     def to_dict(self) -> dict[str, Any]:
         fields = self.__dataclass_fields__  # type: ignore[attr-defined]
         return {f.name: _plain_value(getattr(self, f.name)) for f in fields.values()}
 
     def to_yaml(self, path: str) -> None:
+        try:
+            import yaml
+        except ImportError:
+            raise ImportError(
+                "PyYAML is required for YAML config support. Install it with: pip install pyyaml"
+            ) from None
         with open(path, "w") as f:
             yaml.dump(self.to_dict(), f)
 
@@ -46,6 +63,12 @@ class _ConfigMixin:
 
 @dataclass(frozen=True)
 class TestConfig(_ConfigMixin):
+    """Configuration for a single pairwise comparison.
+
+    All fields have defaults. The dataclass fields below are the
+    full parameter list. See the configuration guide for details
+    on each parameter.
+    """
     __test__ = False
     cv_thr: float = 1.0
     p_thr: float = 0.05
@@ -88,6 +111,12 @@ class TestConfig(_ConfigMixin):
 
 @dataclass(frozen=True)
 class PowerConfig(_ConfigMixin):
+    """Configuration for power analysis simulation.
+
+    All fields have defaults. The dataclass fields below are the
+    full parameter list. See the configuration guide for details
+    on each parameter.
+    """
     n_prts: int = 5000
     n_reps: int = 5
     cv_mean: float = 0.20

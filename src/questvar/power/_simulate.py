@@ -18,19 +18,42 @@ def simulate_data(
 ) -> NDArray[np.float64]:
     """Simulate log-normal proteomics data.
 
-    cv_mu is the target mean CV as a **ratio** (e.g. 0.275 for 27.5%).
+    Parameters
+    ----------
+    n_prts : int
+        Number of features. Default 10000.
+    n_reps : int
+        Number of replicates per condition. Default 10.
+    int_mu : float
+        Mean log-intensity. Default 18.0.
+    int_sd : float
+        Log-intensity standard deviation. Default 1.0.
+    int_log2 : bool
+        If True, mean_dist is computed as 2**mean_dist. Default True.
+    cv_mu : float
+        Target mean CV as a ratio. Default 0.275.
+    cv_k : float
+        Gamma shape for CV distribution. Default 2.0.
+    cv_theta : float
+        Gamma scale for CV distribution. Default 0.5.
+    seed : int, optional
+        Random seed for deterministic generation.
+    delta : float
+        True log2 fold-change for condition 2. Default 0.0.
 
-    delta is the true log2 fold-change applied to the second condition
-    (columns n_reps // 2 onward). A value of 0.0 (default) simulates
-    pure-equivalence data where both conditions share the same mean.
-    Positive delta shifts condition 2 upward in log2 space.
+    Returns
+    -------
+    ndarray
+        Simulated intensity matrix, shape (n_prts, n_reps).
 
-    Seed policy
-    -----------
-    This function uses ``numpy.random.default_rng(seed)`` which creates a
-    fresh local ``Generator``.  It never touches NumPy's global RNG state.
-    Passing the same ``seed`` always produces identical data on any platform
-    within the same NumPy major version.
+    Raises
+    ------
+    ValueError
+        If mean intensities are zero (log-normal undefined).
+
+    Notes
+    -----
+    Seed policy and CV scaling are documented below.
     """
     rng = np.random.default_rng(seed)
 

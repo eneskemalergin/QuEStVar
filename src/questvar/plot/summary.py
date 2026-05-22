@@ -90,13 +90,21 @@ def plot_summary(
     Returns
     -------
     matplotlib.figure.Figure
-        Convenience axes attributes are attached before returning:
-        ``fig.ax_df_hist``, ``fig.ax_eq_hist``, ``fig.ax_pval_scatter``,
-        ``fig.ax_antlers``, ``fig.ax_ma``, ``fig.ax_counts``,
-        ``fig.ax_matrix``, ``fig.ax_hexbin``, ``fig.ax_legend``.
+        The figure. Nine convenience axes attributes are attached.
+
+    Raises
+    ------
+    ImportError
+        If matplotlib is not installed.
     """
-    import matplotlib.lines as mlines
-    import matplotlib.pyplot as plt
+    try:
+        import matplotlib.lines as mlines
+        import matplotlib.pyplot as plt
+    except ImportError:
+        raise ImportError(
+            "Matplotlib is required for plotting. "
+            "Install it with: pip install questvar[plot] or pip install matplotlib"
+        ) from None
 
     pc = config or PlotConfig()
 

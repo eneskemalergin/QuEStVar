@@ -106,17 +106,24 @@ def plot_power(
     Returns
     -------
     matplotlib.figure.Figure
-        The figure also carries two convenience attributes set after rendering:
-        ``fig.ax_main`` (line panel) and ``fig.ax_cv`` (CV boxplot panel),
-        so callers can make post-hoc adjustments::
+        The figure. Convenience axes attributes are attached after rendering.
 
-            fig = plot_power(results)
-            fig.ax_main.set_xlabel("Custom label")
-            fig.ax_cv.set_title("My CV")
+    Raises
+    ------
+    ImportError
+        If matplotlib is not installed.
+    ValueError
+        If ci_method is not 'quantile' or 'se', or ci is out of range.
     """
-    import matplotlib.pyplot as plt
-    from matplotlib.gridspec import GridSpec
-    from matplotlib.transforms import blended_transform_factory, offset_copy
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.gridspec import GridSpec
+        from matplotlib.transforms import blended_transform_factory, offset_copy
+    except ImportError:
+        raise ImportError(
+            "Matplotlib is required for plotting. "
+            "Install it with: pip install questvar[plot] or pip install matplotlib"
+        ) from None
 
     pc = config or PlotConfig()
 

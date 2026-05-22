@@ -33,3 +33,8 @@ Thumbs.db
 
 # Docs
 site/
+.cache/
+docs/notebooks/*.ipynb
+docs/notebooks/*.png
+docs/notebooks/*.parquet
+docs/notebooks/*.json

@@ -24,6 +24,28 @@ def p_adjust(
     method: str | None,
     n_tests: int | None = None,
 ) -> NDArray[np.float64]:
+    """Adjust p-values for multiple testing.
+
+    Parameters
+    ----------
+    pvalues : ndarray
+        Unadjusted p-values.
+    method : str or None
+        Correction method: None, "bonferroni", "holm", "hochberg",
+        "fdr", "fdr_bh", "BY", or "qvalue".
+    n_tests : int, optional
+        Number of tests. Defaults to len(pvalues).
+
+    Returns
+    -------
+    ndarray
+        Adjusted p-values.
+
+    Raises
+    ------
+    ValueError
+        If method is not a valid correction method.
+    """
     p = np.asarray(pvalues, dtype=np.float64)
     n = n_tests if n_tests is not None else len(p)
 

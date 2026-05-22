@@ -435,7 +435,13 @@ def _cmd_power(args: argparse.Namespace) -> None:
 
 
 def _cmd_plot(args: argparse.Namespace) -> None:
-    import matplotlib.pyplot as plt
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        raise ImportError(
+            "Matplotlib is required for plotting. "
+            "Install it with: pip install questvar[plot] or pip install matplotlib"
+        ) from None
 
     if args.type == "antlers":
         from questvar._api import TestResults

@@ -1,0 +1,14 @@
+/* Fix notebook cell indentation.
+   Only overrides CSS custom properties that control padding.
+   Leaves all Jupyter styling intact. */
+
+.jupyter-wrapper {
+  --jp-notebook-padding: 0px;
+  --jp-cell-padding: 0px;
+  --jp-code-padding: 5px;
+}
+
+/* Keep a tiny vertical gap between cells */
+.jupyter-wrapper .jp-Cell {
+  margin: 0.3em 0;
+}

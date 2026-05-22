@@ -11,27 +11,57 @@ license = "MIT"
 authors = [
     { name = "eneskemalergin", email = "eneskemalergin@gmail.com" }
 ]
+keywords = ["statistics", "hypothesis-testing", "equivalence-testing", "omics", "proteomics", "tost", "bioinformatics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
 requires-python = ">=3.12"
 dependencies = [
-    "matplotlib>=3.10.9",
-    "numpy>=2.4.5",
-    "polars>=1.40.1",
-    "pyyaml>=6.0",
-    "scipy>=1.17.1",
+    "numpy>=2.0.0",
+    "polars>=1.0.0",
+    "scipy>=1.10.0",
 ]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.10.0"]
+yaml = ["pyyaml>=6.0"]
+
+[project.urls]
+Homepage = "https://github.com/eneskemalergin/QuEStVar"
+Repository = "https://github.com/eneskemalergin/QuEStVar"
+Documentation = "https://eneskemalergin.github.io/QuEStVar/"
 
 [dependency-groups]
 dev = [
     "hypothesis>=6.152.7",
+    "ipykernel>=6.29",
+    "jupytext>=1.16",
+    "matplotlib>=3.10.0",
     "mkdocs>=1.6",
+    "mkdocs-jupyter>=0.24",
+    "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.26",
     "mypy>=2.1.0",
     "pandas>=3.0.3",
     "pytest>=9.0.3",
-    "pyyaml>=6.0.3",
+    "pyyaml>=6.0",
     "ruff>=0.15.13",
     "scikit-learn>=1.8.0",
 ]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/questvar/**/*.py"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/questvar"]
 
 [project.scripts]
 questvar = "questvar._cli:main"
@@ -54,6 +84,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "ARG"]
 "tests/test_correction.py" = ["E501"]
 "tests/test_ttest.py" = ["E501"]
 "tests/test_power.py" = ["E501"]
+"docs/**" = ["E501", "E402", "B018"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -64,6 +95,14 @@ addopts = ["-m", "not r_reference"]
 markers = [
     "r_reference: R-backed reference tests that require R packages and are excluded from the default test suite",
 ]
+
+[tool.hypothesis]
+phases = "generate"
+
+[tool.hypothesis.ci]
+max_examples = 200
+derandomize = true
+suppress_health_check = ["too_slow"]
 
 [tool.mypy]
 python_version = "3.12"

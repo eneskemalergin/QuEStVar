@@ -6,6 +6,35 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Code quality
+
+- Full `mypy --strict` compliance across the entire source tree.
+- Ruff linting and formatting enforced in CI.
+- Consistent naming conventions (internal modules prefixed with `_`).
+- Inline imports moved to module top where feasible.
+- E501 line-length violations resolved.
+
+### CI/CD
+
+- GitHub Actions CI matrix: 3 operating systems x 3 Python versions (3.12, 3.13, 3.14).
+- Automated linting (`ruff check` + `ruff format --check`), type checking (`mypy --strict`), testing (`pytest`), and packaging (`uv build`).
+- Automated PyPI publication via trusted publishing (OpenID Connect).
+- Automated documentation deployment to GitHub Pages.
+
+### Dependency management
+
+- `matplotlib` and `pyyaml` made optional. Core dependencies reduced to `numpy`, `scipy`, `polars`.
+- Minimum version pins relaxed to realistic lower bounds.
+- Python 3.14 added to the support matrix.
+
+### Documentation
+
+- Full documentation site at https://eneskemalergin.github.io/QuEStVar/.
+- Tutorial notebooks (Quick Start, Power Analysis) executed during site build.
+- Configuration, plotting, and CLI reference guides.
+- Auto-generated API reference from docstrings via mkdocstrings.
+- Contributing guide with development workflow.
+
 ## [0.1.0] - 2026-05-17
 
 Initial release of QuEStVar.

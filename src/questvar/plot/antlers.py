@@ -58,8 +58,6 @@ def antlers(
         Column in ``results.data`` to use as annotation text.
     rasterize_scatters : bool
         Rasterize scatter layers for smaller file sizes.
-    show_excluded : bool
-        Whether to include ``Excluded`` in the legend.
     show : bool
         Call ``plt.show()`` after building.
     save_path : str or Path, optional
@@ -69,8 +67,21 @@ def antlers(
     -------
     Figure
         The matplotlib figure. Attaches ``fig.ax_main`` for post-hoc access.
+
+    Raises
+    ------
+    ImportError
+        If matplotlib is not installed.
+    ValueError
+        If both feature_ids and protein_ids are passed.
     """
-    import matplotlib.pyplot as plt
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        raise ImportError(
+            "Matplotlib is required for plotting. "
+            "Install it with: pip install questvar[plot] or pip install matplotlib"
+        ) from None
 
     if feature_ids is not None and protein_ids is not None:
         raise ValueError("Parameters 'feature_ids' and 'protein_ids' are aliases. Pass only one.")

@@ -173,6 +173,17 @@ class QuestVar:
 
     @classmethod
     def from_yaml(cls, path: str) -> QuestVar:
+        """Load config from a YAML file and return a QuestVar instance.
+
+        Parameters
+        ----------
+        path : str
+            Path to a YAML config file.
+
+        Returns
+        -------
+        QuestVar
+        """
         return cls(TestConfig.from_yaml(path))
 
     def test(
@@ -182,6 +193,33 @@ class QuestVar:
         cond_2: list[str] | list[int],
         **overrides: Any,
     ) -> TestResults:
+        """Run a pairwise equivalence and difference test.
+
+        Parameters
+        ----------
+        data : pl.DataFrame or np.ndarray
+            Input data. Polars DataFrame with sample columns, or numpy array.
+        cond_1 : list of str or list of int
+            Column names (DataFrame) or indices (ndarray) for condition 1.
+        cond_2 : list of str or list of int
+            Column names (DataFrame) or indices (ndarray) for condition 2.
+        **overrides
+            Override any config field for this call only (cv_thr, p_thr, etc.).
+
+        Returns
+        -------
+        TestResults
+
+        Raises
+        ------
+        ValueError
+            If cond_1 or cond_2 have fewer than 2 columns, share columns,
+            reference missing columns, or if the data contains non-numeric
+            columns. Also raised for paired analysis with unequal replicate
+            counts or asymmetric missing-value patterns.
+        TypeError
+            If data is not a pl.DataFrame or np.ndarray.
+        """
         config = replace(self.config, **overrides) if overrides else self.config
 
         s1_arr, s2_arr, feature_ids, c1, c2, meta = validate_and_extract(
@@ -284,6 +322,22 @@ class QuestVar:
         condition_map: dict[str, list[str]],
         **overrides: Any,
     ) -> dict[tuple[str, str], TestResults]:
+        """Run every pairwise combination from a condition map.
+
+        Parameters
+        ----------
+        data : pl.DataFrame
+            Input data with sample columns.
+        condition_map : dict of str to list of str
+            Map from condition name to list of column names.
+        **overrides
+            Override config fields for all comparisons.
+
+        Returns
+        -------
+        dict of (str, str) to TestResults
+            One TestResults per pair, keyed by (condition_1, condition_2).
+        """
         from itertools import combinations
 
         return {
@@ -313,6 +367,53 @@ class QuestVar:
         cv_theta: float = 0.5,
         n_jobs: int | None = None,
     ) -> PowerResults:
+        """Run a power analysis sweep. Delegates to run_power_analysis().
+
+        Parameters
+        ----------
+        target_sei : float
+            Target Stable Equivalence Index. Default 0.8.
+        eq_boundaries : ndarray, optional
+            Equivalence boundaries to sweep.
+        n_reps_list : list of int, optional
+            Replicate counts to sweep.
+        cv_mean_list : list of float, optional
+            Mean CV values to sweep.
+        cv_thr_list : list of float, optional
+            CV thresholds to sweep.
+        n_prts_list : list of int, optional
+            Feature counts to sweep.
+        random_seed : int, optional
+            Base random seed for deterministic simulation.
+        n_prts : int
+            Features per Monte Carlo iteration. Default 10000.
+        n_iterations : int
+            Iterations per design point. Default 10.
+        target_power : float
+            Minimum power for design search. Default 0.8.
+        p_thr : float
+            Adjusted p-value threshold. Default 0.05.
+        df_thr : float
+            Difference boundary. Default 1.0.
+        cv_thr : float
+            CV threshold for feature selection. Default 1.0.
+        correction : str or None
+            Multiple testing correction method. Default "fdr".
+        int_mu : float
+            Mean log-intensity for simulator. Default 18.0.
+        int_sd : float
+            Log-intensity standard deviation. Default 1.0.
+        cv_k : float
+            Gamma shape for CV distribution. Default 2.0.
+        cv_theta : float
+            Gamma scale for CV distribution. Default 0.5.
+        n_jobs : int, optional
+            Parallel workers. Default uses half of CPU cores.
+
+        Returns
+        -------
+        PowerResults
+        """
         from questvar.power.run import run_power_analysis
 
         return run_power_analysis(
@@ -374,11 +475,54 @@ class TestResults:
         self.info = info
 
     def plot(self, **kwargs: Any) -> Any:
+        """Generate the 8-panel summary figure. Delegates to plot_summary().
+
+        Parameters
+        ----------
+        **kwargs
+            Passed to questvar.plot.summary.plot_summary.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+        """
         from questvar.plot.summary import plot_summary
 
         return plot_summary(self, **kwargs)
 
     def save(self, path: str) -> None:
+        """Save power analysis results to a file.
+
+        .json output saves the full payload (design_grid, run_metrics,
+        search_results, diagnostics). .parquet/.csv/.tsv saves only
+        the design_grid with a metadata sidecar.
+
+        Parameters
+        ----------
+        path : str
+            Output path with .parquet, .csv, .tsv, or .json extension.
+
+        Raises
+        ------
+        ValueError
+            If the file extension is not supported.
+        """
+        """Save results to a file with sidecar metadata.
+
+        Writes the main data table, an info sidecar (CV filter status),
+        and a JSON metadata file (config, condition labels).
+
+        Parameters
+        ----------
+        path : str
+            Output path with .parquet, .csv, or .tsv extension.
+            Sidecar files use the same stem with .info.* and .meta.json.
+
+        Raises
+        ------
+        ValueError
+            If the file extension is not supported.
+        """
         import json
 
         suffix = Path(path).suffix
@@ -407,6 +551,25 @@ class TestResults:
 
     @classmethod
     def load(cls, path: str) -> TestResults:
+        """Load saved results from a file with its sidecar files.
+
+        Parameters
+        ----------
+        path : str
+            Path to the saved data file (.parquet, .csv, .tsv).
+            Sidecar files must exist alongside.
+
+        Returns
+        -------
+        TestResults
+
+        Raises
+        ------
+        FileNotFoundError
+            If the sidecar info or metadata file is missing.
+        ValueError
+            If the metadata JSON is invalid, or columns are missing.
+        """
         from questvar._config import TestConfig
 
         p = Path(path)
@@ -458,6 +621,26 @@ class TestResults:
         return cls(data, config, meta["cond_1"], meta["cond_2"], info)
 
     def summary(self) -> str:
+        """Return a text summary of the power analysis results.
+
+        Reports design point count, Monte Carlo runs, convergence
+        diagnostics, grouped parameter ranges with power/SEI ranges,
+        and recommended designs from the search results.
+
+        Returns
+        -------
+        str
+        """
+        """Return a text summary of the test results.
+
+        Includes input feature count, CV filter exclusion count,
+        tested count, status breakdown (equivalent, differential,
+        not significant), thresholds, and correction method.
+
+        Returns
+        -------
+        str
+        """
         counts = self.data.group_by("status").len()
 
         def _count(val: int) -> int:
@@ -500,6 +683,21 @@ class PowerResults:
         Per-run Monte Carlo metrics in long format.
     search_results : list of dict
         Search outcomes for supported optimization axes.
+    diagnostics : dict
+        Runtime diagnostics (convergence, timing, seed policy).
+    """
+    """Container for power analysis results.
+
+    Attributes
+    ----------
+    config : dict
+        Normalized power-analysis configuration and metadata.
+    design_grid : list of dict
+        Aggregated metrics for each tested design point.
+    run_metrics : list of dict
+        Per-run Monte Carlo metrics in long format.
+    search_results : list of dict
+        Search outcomes for supported optimization axes.
     """
 
     def __init__(self, payload: dict[str, Any]) -> None:
@@ -511,6 +709,26 @@ class PowerResults:
         self.results = self.design_grid
 
     def summary(self) -> str:
+        """Return a text summary of the power analysis results.
+
+        Reports design point count, Monte Carlo runs, convergence
+        diagnostics, grouped parameter ranges with power/SEI ranges,
+        and recommended designs from the search results.
+
+        Returns
+        -------
+        str
+        """
+        """Return a text summary of the test results.
+
+        Includes input feature count, CV filter exclusion count,
+        tested count, status breakdown (equivalent, differential,
+        not significant), thresholds, and correction method.
+
+        Returns
+        -------
+        str
+        """
         def _numeric_range(rows: list[dict[str, Any]], key: str) -> str:
             values: list[float] = []
             for row in rows:
@@ -580,6 +798,38 @@ class PowerResults:
         return "\n".join(lines)
 
     def save(self, path: str) -> None:
+        """Save power analysis results to a file.
+
+        .json output saves the full payload (design_grid, run_metrics,
+        search_results, diagnostics). .parquet/.csv/.tsv saves only
+        the design_grid with a metadata sidecar.
+
+        Parameters
+        ----------
+        path : str
+            Output path with .parquet, .csv, .tsv, or .json extension.
+
+        Raises
+        ------
+        ValueError
+            If the file extension is not supported.
+        """
+        """Save results to a file with sidecar metadata.
+
+        Writes the main data table, an info sidecar (CV filter status),
+        and a JSON metadata file (config, condition labels).
+
+        Parameters
+        ----------
+        path : str
+            Output path with .parquet, .csv, or .tsv extension.
+            Sidecar files use the same stem with .info.* and .meta.json.
+
+        Raises
+        ------
+        ValueError
+            If the file extension is not supported.
+        """
         import json
 
         suffix = Path(path).suffix
@@ -608,6 +858,27 @@ class PowerResults:
 
     @classmethod
     def load(cls, path: str) -> PowerResults:
+        """Load power analysis results from a file.
+
+        .json loads the full payload. .parquet/.csv/.tsv loads the
+        design grid and optionally the config from the metadata sidecar.
+
+        Parameters
+        ----------
+        path : str
+            Path with .parquet, .csv, .tsv, or .json extension.
+
+        Returns
+        -------
+        PowerResults
+
+        Raises
+        ------
+        ValueError
+            If the file extension is not supported or columns are missing.
+        FileNotFoundError
+            If the file does not exist.
+        """
         import json
 
         p = Path(path)
@@ -702,6 +973,13 @@ class PowerResults:
         )
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the full payload as a dictionary.
+
+        Returns
+        -------
+        dict
+            Keys: config, design_grid, run_metrics, search_results, diagnostics.
+        """
         return {
             "config": self.config,
             "design_grid": self.design_grid,
@@ -711,6 +989,23 @@ class PowerResults:
         }
 
     def to_frame(self, level: str = "design_grid") -> pl.DataFrame:
+        """Return a DataFrame for a given payload section.
+
+        Parameters
+        ----------
+        level : str
+            Section to extract. One of "design_grid", "run_metrics",
+            "search_results", "diagnostics", or "config".
+
+        Returns
+        -------
+        pl.DataFrame
+
+        Raises
+        ------
+        ValueError
+            If level is not a valid section or contains a non-tabular payload.
+        """
         if level not in self.to_dict():
             raise ValueError(
                 f"Parameter 'level' has unsupported PowerResults section {level!r}. "
@@ -727,6 +1022,18 @@ class PowerResults:
         )
 
     def optimal_design(self, search_for: str = "n_reps") -> dict[str, Any] | None:
+        """Return the optimal design for a given search axis.
+
+        Parameters
+        ----------
+        search_for : str
+            Axis to optimize. One of "n_reps", "eq_thr", "cv_mean", "cv_thr".
+
+        Returns
+        -------
+        dict or None
+            The search result dict for that axis, or None if not found.
+        """
         for row in self.search_results:
             if row["search_for"] == search_for:
                 return cast("dict[str, Any]", row)
@@ -782,6 +1089,21 @@ class PowerResults:
     def compare(
         self, other: PowerResults | dict[str, Any], level: str = "design_grid"
     ) -> list[dict[str, Any]]:
+        """Compare two PowerResults at a given payload level.
+
+        Parameters
+        ----------
+        other : PowerResults or dict
+            The other result to compare against.
+        level : str
+            Section to compare. Default "design_grid".
+
+        Returns
+        -------
+        list of dict
+            One dict per matching row with delta values for
+            sei_mean, power, and false_diff_rate.
+        """
         if hasattr(other, "to_dict"):
             other_payload = other.to_dict()
         elif isinstance(other, dict):
@@ -834,6 +1156,19 @@ class PowerResults:
         return comparison
 
     def plot(self, kind: str = "power_profile", **kwargs: Any) -> Any:
+        """Generate a power analysis plot.
+
+        Parameters
+        ----------
+        kind : str
+            Plot type. Currently only "power_profile" is supported.
+        **kwargs
+            Passed to the plot function.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+        """
         from questvar.plot.power import plot_power
 
         plotters: dict[str, Any] = {"power_profile": plot_power}

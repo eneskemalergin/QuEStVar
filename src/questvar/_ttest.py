@@ -140,12 +140,12 @@ def _pvalue_from_t(
     df: NDArray[np.float64],
     alternative: str,
 ) -> NDArray[np.float64]:
-    cdf: NDArray[np.float64] = cast(NDArray[np.float64], stdtr(df, t_stat))
+    cdf = cast(NDArray[np.float64], stdtr(df, t_stat))
     if alternative == "less":
         return cdf
     if alternative == "greater":
-        return cast(NDArray[np.float64], 1.0 - cdf)  # type: ignore[redundant-cast]
-    return cast(NDArray[np.float64], 2.0 * np.where(t_stat > 0, 1.0 - cdf, cdf))  # type: ignore[redundant-cast]
+        return 1.0 - cdf
+    return 2.0 * np.where(t_stat > 0, 1.0 - cdf, cdf)
 
 
 def run_unpaired(
@@ -157,6 +157,34 @@ def run_unpaired(
     correction: str | None = "fdr",
     equal_var: bool = False,
 ) -> NDArray[np.float64]:
+    """Run the full TOST + t-test pipeline for unpaired samples.
+
+    Vectorized over all features. Computes per-feature means, variances,
+    degrees of freedom (Welch or pooled), t-statistics, and p-values
+    for both the difference test and the two one-sided TOST equivalence
+    tests. Applies multiple testing correction and classifies each feature
+    as equivalent, differential, or not significant.
+
+    Parameters
+    ----------
+    s1, s2 : ndarray
+        Intensity arrays, shape (n_features, n_replicates).
+    eq_thr : float
+        Equivalence boundary in log2 fold change. Default 0.5.
+    df_thr : float
+        Difference boundary in log2 fold change. Default 1.0.
+    p_thr : float
+        Adjusted p-value threshold. Default 0.05.
+    correction : str or None
+        Multiple testing correction. Default "fdr".
+    equal_var : bool
+        Assume equal variance (Student t-test). Default False (Welch).
+
+    Returns
+    -------
+    ndarray
+        17-column result array indexed by COL_* constants.
+    """
     from questvar._correction import p_adjust
 
     n1 = np.sum(~np.isnan(s1), axis=1).astype(np.float64)
@@ -236,6 +264,36 @@ def run_paired(
     p_thr: float = 0.05,
     correction: str | None = "fdr",
 ) -> NDArray[np.float64]:
+    """Run the full TOST + t-test pipeline for paired samples.
+
+    Vectorized over all features. Computes per-feature paired differences,
+    then runs a paired t-test and paired TOST on the differences. Applies
+    multiple testing correction and classifies each feature.
+
+    Parameters
+    ----------
+    s1, s2 : ndarray
+        Paired intensity arrays, shape (n_features, n_replicates).
+    eq_thr : float
+        Equivalence boundary in log2 fold change. Default 0.5.
+    df_thr : float
+        Difference boundary in log2 fold change. Default 1.0.
+    p_thr : float
+        Adjusted p-value threshold. Default 0.05.
+    correction : str or None
+        Multiple testing correction. Default "fdr".
+
+    Returns
+    -------
+    ndarray
+        17-column result array indexed by COL_* constants.
+
+    Raises
+    ------
+    ValueError
+        If s1 and s2 have different shapes, asymmetric missingness,
+        or fewer than 2 complete pairs for any feature.
+    """
     from questvar._correction import p_adjust
 
     s1 = np.asarray(s1, dtype=np.float64)

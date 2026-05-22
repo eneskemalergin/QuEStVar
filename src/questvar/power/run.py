@@ -45,6 +45,60 @@ def run_power_analysis(
     recovery directly, and ``diff_rate`` is interpreted as a false-differential
     classification rate under that null design.
 
+    Parameters
+    ----------
+    eq_boundaries : ndarray, optional
+        Equivalence boundaries to sweep. Default [0.1, 0.3, 0.5, 0.7, 0.9].
+    n_reps_list : list of int, optional
+        Replicate counts to sweep. Default [3, 5, 10, 20].
+    cv_mean_list : list of float, optional
+        Mean CV values to sweep. Default [0.10, 0.20, 0.30].
+    cv_thr_list : list of float, optional
+        CV thresholds to sweep.
+    n_prts_list : list of int, optional
+        Feature counts to sweep.
+    random_seed : int, optional
+        Base seed for deterministic simulation.
+    n_prts : int
+        Features per iteration. Default 10000.
+    n_iterations : int
+        Iterations per design point. Default 10.
+    target_sei : float
+        Target Stable Equivalence Index. Default 0.8.
+    target_power : float
+        Target power for design search. Default 0.8.
+    p_thr : float
+        Adjusted p-value cutoff. Default 0.05.
+    df_thr : float
+        Difference boundary. Default 1.0.
+    cv_thr : float
+        CV filter threshold. Default 1.0.
+    correction : str or None
+        MTC method. Default "fdr".
+    int_mu : float
+        Mean log-intensity for simulator. Default 18.0.
+    int_sd : float
+        Log-intensity SD. Default 1.0.
+    cv_k : float
+        Gamma shape for CV. Default 2.0.
+    cv_theta : float
+        Gamma scale for CV. Default 0.5.
+    n_jobs : int, optional
+        Parallel workers. Default uses half of CPU cores.
+
+    Returns
+    -------
+    PowerResults
+
+    Raises
+    ------
+    ValueError
+        If any parameter is out of range (validated by PowerConfig).
+
+    Notes
+    -----
+    Seed policy and CRN behavior are documented below.
+
     Seed policy (read carefully, Monte Carlo implications below)
     ---------------------------------------------------------------
     Every Monte Carlo iteration within a design point receives its own

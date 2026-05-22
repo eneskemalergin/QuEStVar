@@ -39,6 +39,22 @@ def make_selection_indicator(
     cv_arr: NDArray[np.float64],
     cv_thr: float = 0.15,
 ) -> NDArray[np.int8]:
+    """Classify each feature by CV status: passed, missing, or failed.
+
+    Parameters
+    ----------
+    cv_arr : ndarray
+        CV values per feature.
+    cv_thr : float
+        CV threshold. Features with CV <= cv_thr get status 1.
+        Default 0.15.
+
+    Returns
+    -------
+    ndarray of int8
+        1 for CV <= cv_thr (pass), 0 for NaN CV (missing data),
+        -1 for CV > cv_thr (fail).
+    """
     cv_arr = np.asarray(cv_arr, dtype=np.float64)
     indicator = np.full(cv_arr.shape, -1, dtype=np.int8)
 

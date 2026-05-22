@@ -1,0 +1,98 @@
+site_name: QuEStVar
+site_description: Vectorized equivalence and difference testing for quantitative omics data
+site_url: https://eneskemalergin.github.io/QuEStVar
+repo_url: https://github.com/eneskemalergin/QuEStVar
+repo_name: eneskemalergin/QuEStVar
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+
+hooks:
+  - docs/hooks.py
+
+extra_css:
+  - stylesheets/notebook.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: numpy
+            show_docstring_parameters: true
+            show_docstring_returns: true
+            show_docstring_raises: true
+            show_root_heading: true
+            show_category_heading: true
+            show_if_no_docstring: false
+            members_order: source
+            separate_signature: true
+            unwrap_annotated: true
+  - mkdocs-jupyter:
+      include: ["*.py"]
+      ignore_h1_titles: true
+      execute: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["."]
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - toc:
+      permalink: true
+
+watch:
+  - src/questvar
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - Quick Start: notebooks/quick_start.py
+      - Power Analysis: notebooks/power_analysis.py
+  - Guides:
+      - Configuration: guides/configuration.md
+      - Plotting: guides/plotting.md
+      - CLI Reference: guides/cli.md
+  - API Reference:
+      - QuestVar: api/questvar.md
+      - TestResults: api/test_results.md
+      - PowerResults: api/power_results.md
+      - PlotConfig: api/plot_config.md
+      - Public functions: api/functions.md
+  - Contributing: contributing.md
